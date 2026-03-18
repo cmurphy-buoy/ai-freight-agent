@@ -1473,7 +1473,15 @@ git commit -m "feat: add Bookkeeper dashboard with invoices, bank, and reconcili
 
 ---
 
-## Task 11: Final Integration + Verification
+## Task 11: Tests
+
+**Files:**
+- Create: `tests/conftest.py`
+- Create: `tests/test_invoices.py`
+- Create: `tests/test_bank.py`
+- Create: `tests/test_reconciliation.py`
+- Create: `tests/test_categorization.py`
+- Modify: `requirements.txt`
 
 - [ ] **Step 1: Add test dependencies to requirements.txt**
 
@@ -1485,7 +1493,518 @@ pytest==8.3.3
 pytest-asyncio==0.24.0
 ```
 
-- [ ] **Step 2: Verify all endpoints work**
+- [ ] **Step 2: Create test fixtures**
+
+Create `tests/conftest.py`:
+
+```python
+import asyncio
+from datetime import date, timedelta
+from decimal import Decimal
+
+import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.db.database import get_db
+from app.main import app
+from app.models.base import Base
+from app.models.carrier import CarrierProfile
+from app.models.invoice import Invoice, InvoiceStatus
+from app.models.bank import BankConnection, BankTransaction, ConnectionType
+
+
+# Use a separate test database
+TEST_DATABASE_URL = "postgresql+asyncpg://postgres:password@localhost:5432/freight_agent_test"
+
+engine = create_async_engine(TEST_DATABASE_URL)
+TestSession = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    yield loop
+    loop.close()
+
+
+@pytest_asyncio.fixture
+async def db():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    async with TestSession() as session:
+        yield session
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture
+async def client(db):
+    async def override_get_db():
+        yield db
+    app.dependency_overrides[get_db] = override_get_db
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+@pytest_asyncio.fixture
+async def carrier(db):
+    c = CarrierProfile(
+        company_name="Test Trucking",
+        mc_number="123456",
+        dot_number="1234567",
+        contact_name="John",
+        contact_email="john@test.com",
+        contact_phone="555-0100",
+    )
+    db.add(c)
+    await db.commit()
+    await db.refresh(c)
+    return c
+
+
+@pytest_asyncio.fixture
+async def sample_invoice(db, carrier):
+    inv = Invoice(
+        carrier_id=carrier.id,
+        broker_name="Apex Freight",
+        broker_mc="384291",
+        origin_city="Atlanta",
+        origin_state="GA",
+        destination_city="Dallas",
+        destination_state="TX",
+        amount=Decimal("2500.00"),
+        rate_per_mile=Decimal("2.50"),
+        miles=1000,
+        invoice_date=date.today(),
+        due_date=date.today() + timedelta(days=30),
+        status=InvoiceStatus.outstanding,
+    )
+    db.add(inv)
+    await db.commit()
+    await db.refresh(inv)
+    return inv
+
+
+@pytest_asyncio.fixture
+async def bank_connection(db, carrier):
+    conn = BankConnection(
+        carrier_id=carrier.id,
+        institution_name="First National Bank",
+        account_name="Business Checking",
+        account_mask="4521",
+        connection_type=ConnectionType.plaid,
+        plaid_access_token="mock-token",
+        plaid_item_id="mock-item",
+    )
+    db.add(conn)
+    await db.commit()
+    await db.refresh(conn)
+    return conn
+```
+
+- [ ] **Step 3: Create invoice tests**
+
+Create `tests/test_invoices.py`:
+
+```python
+import pytest
+from datetime import date, timedelta
+
+
+@pytest.mark.asyncio
+async def test_create_invoice(client, carrier):
+    resp = await client.post("/api/invoices", json={
+        "carrier_id": carrier.id,
+        "broker_name": "Test Broker",
+        "broker_mc": "123456",
+        "origin_city": "Atlanta",
+        "origin_state": "GA",
+        "destination_city": "Dallas",
+        "destination_state": "TX",
+        "amount": 2000.00,
+        "rate_per_mile": 2.50,
+        "miles": 800,
+        "due_date": str(date.today() + timedelta(days=30)),
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["broker_name"] == "Test Broker"
+    assert data["status"] == "draft"
+    assert data["invoice_date"] == str(date.today())
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_from_load(client, carrier):
+    resp = await client.post("/api/invoices/from-load", json={
+        "carrier_id": carrier.id,
+        "broker_name": "Load Broker",
+        "broker_mc": "654321",
+        "origin_city": "Nashville",
+        "origin_state": "TN",
+        "destination_city": "Miami",
+        "destination_state": "FL",
+        "rate_total": 3000.00,
+        "rate_per_mile": 3.00,
+        "miles": 1000,
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["amount"] == "3000.00"
+    assert data["status"] == "draft"
+    assert data["due_date"] == str(date.today() + timedelta(days=30))
+
+
+@pytest.mark.asyncio
+async def test_get_invoice(client, sample_invoice):
+    resp = await client.get(f"/api/invoices/{sample_invoice.id}")
+    assert resp.status_code == 200
+    assert resp.json()["broker_name"] == "Apex Freight"
+
+
+@pytest.mark.asyncio
+async def test_get_invoice_not_found(client):
+    resp = await client.get("/api/invoices/99999")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_invoice_status(client, sample_invoice):
+    resp = await client.put(f"/api/invoices/{sample_invoice.id}", json={
+        "status": "paid",
+        "payment_date": str(date.today()),
+    })
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "paid"
+
+
+@pytest.mark.asyncio
+async def test_list_invoices_filter_status(client, carrier, sample_invoice):
+    resp = await client.get(f"/api/invoices?carrier_id={carrier.id}&status=outstanding")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    assert all(inv["status"] == "outstanding" for inv in data)
+
+
+@pytest.mark.asyncio
+async def test_create_invoice_invalid_carrier(client):
+    resp = await client.post("/api/invoices", json={
+        "carrier_id": 99999,
+        "broker_name": "Bad",
+        "broker_mc": "111111",
+        "origin_city": "A",
+        "origin_state": "GA",
+        "destination_city": "B",
+        "destination_state": "TX",
+        "amount": 100,
+        "rate_per_mile": 1,
+        "miles": 100,
+        "due_date": str(date.today()),
+    })
+    assert resp.status_code == 400
+```
+
+- [ ] **Step 4: Create bank tests**
+
+Create `tests/test_bank.py`:
+
+```python
+import io
+import pytest
+
+
+@pytest.mark.asyncio
+async def test_plaid_link(client, carrier):
+    resp = await client.post("/api/bank-connections/plaid/link", json={
+        "carrier_id": carrier.id,
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["institution_name"] == "First National Bank"
+    assert data["connection_type"] == "plaid"
+
+
+@pytest.mark.asyncio
+async def test_list_bank_connections(client, carrier, bank_connection):
+    resp = await client.get(f"/api/bank-connections?carrier_id={carrier.id}")
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
+
+
+@pytest.mark.asyncio
+async def test_delete_bank_connection(client, bank_connection):
+    resp = await client.delete(f"/api/bank-connections/{bank_connection.id}")
+    assert resp.status_code == 204
+    # Should not appear in active list after delete
+    resp2 = await client.get(f"/api/bank-connections?carrier_id={bank_connection.carrier_id}")
+    assert all(c["id"] != bank_connection.id for c in resp2.json())
+
+
+@pytest.mark.asyncio
+async def test_sync_transactions(client, bank_connection):
+    resp = await client.post(f"/api/bank-connections/{bank_connection.id}/sync")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) > 0
+    # Should have mix of deposits and debits
+    amounts = [float(t["amount"]) for t in data]
+    assert any(a > 0 for a in amounts)  # deposits
+    assert any(a < 0 for a in amounts)  # debits
+
+
+@pytest.mark.asyncio
+async def test_csv_upload(client, carrier):
+    csv_content = "Date,Description,Amount\n2026-03-01,PILOT FUEL,-250.00\n2026-03-02,DEPOSIT BROKER,1500.00\n"
+    resp = await client.post(
+        f"/api/bank-connections/upload?carrier_id={carrier.id}",
+        files={"file": ("statement.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["imported"] == 2
+    assert data["skipped"] == 0
+
+
+@pytest.mark.asyncio
+async def test_csv_upload_dedup(client, carrier):
+    csv_content = "Date,Description,Amount\n2026-03-01,SAME TXN,100.00\n"
+    # Upload twice
+    await client.post(
+        f"/api/bank-connections/upload?carrier_id={carrier.id}",
+        files={"file": ("s.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    resp = await client.post(
+        f"/api/bank-connections/upload?carrier_id={carrier.id}",
+        files={"file": ("s.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    assert resp.json()["skipped"] == 1
+    assert resp.json()["imported"] == 0
+
+
+@pytest.mark.asyncio
+async def test_csv_upload_bad_format(client, carrier):
+    csv_content = "Foo,Bar,Baz\n1,2,3\n"
+    resp = await client.post(
+        f"/api/bank-connections/upload?carrier_id={carrier.id}",
+        files={"file": ("bad.csv", io.BytesIO(csv_content.encode()), "text/csv")},
+    )
+    assert resp.status_code == 400
+```
+
+- [ ] **Step 5: Create reconciliation tests**
+
+Create `tests/test_reconciliation.py`:
+
+```python
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from app.models.bank import BankTransaction
+from app.models.invoice import Invoice, InvoiceStatus
+from app.services.reconciliation import ReconciliationService, _normalize_name
+
+
+def test_normalize_name():
+    assert _normalize_name("Apex Freight") == "apex"
+    assert _normalize_name("TQL Logistics") == "tql"
+    assert _normalize_name("CH Robinson Inc") == "ch robinson"
+    assert _normalize_name("  Coyote  Logistics  LLC  ") == "coyote"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_exact_match(db, carrier, sample_invoice, bank_connection):
+    # Create a deposit matching the invoice
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="test-match-1",
+        date=date.today(),
+        description="DEPOSIT - Apex Freight MC#384291",
+        amount=Decimal("2500.00"),
+        is_deposit=True,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = ReconciliationService(db)
+    result = await service.reconcile(carrier.id)
+
+    assert result["matched_count"] == 1
+    assert len(result["newly_paid_invoices"]) == 1
+    assert result["newly_paid_invoices"][0]["broker_name"] == "Apex Freight"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_within_tolerance(db, carrier, sample_invoice, bank_connection):
+    # $0.30 difference — should still match
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="test-tolerance-1",
+        date=date.today(),
+        description="DEPOSIT - Apex Freight",
+        amount=Decimal("2500.30"),
+        is_deposit=True,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = ReconciliationService(db)
+    result = await service.reconcile(carrier.id)
+    assert result["matched_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_unmatched(db, carrier, sample_invoice, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="test-unmatched-1",
+        date=date.today(),
+        description="ACH DEPOSIT UNKNOWN COMPANY",
+        amount=Decimal("999.00"),
+        is_deposit=True,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = ReconciliationService(db)
+    result = await service.reconcile(carrier.id)
+    assert result["matched_count"] == 0
+    assert len(result["unmatched_deposits"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_reconcile_idempotent(db, carrier, sample_invoice, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="test-idemp-1",
+        date=date.today(),
+        description="DEPOSIT - Apex Freight",
+        amount=Decimal("2500.00"),
+        is_deposit=True,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = ReconciliationService(db)
+    r1 = await service.reconcile(carrier.id)
+    assert r1["matched_count"] == 1
+
+    # Run again — should find nothing new
+    r2 = await service.reconcile(carrier.id)
+    assert r2["matched_count"] == 0
+```
+
+- [ ] **Step 6: Create categorization tests**
+
+Create `tests/test_categorization.py`:
+
+```python
+from datetime import date
+from decimal import Decimal
+
+import pytest
+
+from app.models.bank import BankTransaction
+from app.services.categorization import TransactionCategorizationService
+
+
+@pytest.mark.asyncio
+async def test_categorize_fuel(db, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="cat-fuel-1",
+        date=date.today(),
+        description="PILOT TRAVEL CENTER #4521",
+        amount=Decimal("-350.00"),
+        is_deposit=False,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = TransactionCategorizationService(db)
+    result = await service.categorize(bank_connection.id)
+    assert result["by_category"].get("fuel", 0) >= 1
+
+
+@pytest.mark.asyncio
+async def test_categorize_tolls(db, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="cat-toll-1",
+        date=date.today(),
+        description="EZ PASS REPLENISH",
+        amount=Decimal("-50.00"),
+        is_deposit=False,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = TransactionCategorizationService(db)
+    result = await service.categorize(bank_connection.id)
+    assert result["by_category"].get("tolls", 0) >= 1
+
+
+@pytest.mark.asyncio
+async def test_categorize_does_not_overwrite(db, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="cat-existing-1",
+        date=date.today(),
+        description="PILOT FUEL",
+        amount=Decimal("-100.00"),
+        is_deposit=False,
+        category="manual_override",
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = TransactionCategorizationService(db)
+    result = await service.categorize(bank_connection.id)
+    # Should not have touched the already-categorized transaction
+    await db.refresh(txn)
+    assert txn.category == "manual_override"
+
+
+@pytest.mark.asyncio
+async def test_categorize_other_default(db, bank_connection):
+    txn = BankTransaction(
+        bank_connection_id=bank_connection.id,
+        transaction_id="cat-other-1",
+        date=date.today(),
+        description="RANDOM UNKNOWN PURCHASE",
+        amount=Decimal("-25.00"),
+        is_deposit=False,
+    )
+    db.add(txn)
+    await db.commit()
+
+    service = TransactionCategorizationService(db)
+    result = await service.categorize(bank_connection.id)
+    assert result["by_category"].get("other", 0) >= 1
+```
+
+- [ ] **Step 7: Run tests**
+
+Run: `pytest tests/ -v`
+
+Expected: All tests pass (requires `freight_agent_test` database to exist).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add tests/ requirements.txt
+git commit -m "test: add test suite for invoices, bank, reconciliation, and categorization"
+```
+
+---
+
+## Task 12: Final Integration + Verification
+
+- [ ] **Step 1: Verify all endpoints work**
 
 Run: `uvicorn app.main:app --reload`
 
@@ -1502,11 +2021,11 @@ Check: `curl http://localhost:8000/docs` shows all new endpoints:
 - /api/reconcile (POST)
 - /api/transactions/categorize (POST)
 
-- [ ] **Step 3: Verify typecheck passes**
+- [ ] **Step 2: Verify typecheck passes**
 
 Run: `python -m mypy app/ --ignore-missing-imports` (if mypy is available, otherwise skip)
 
-- [ ] **Step 4: Final commit**
+- [ ] **Step 3: Final commit**
 
 ```bash
 git add -A
@@ -1525,10 +2044,11 @@ git commit -m "feat: complete AI Bookkeeper Phase 2 (US-011 through US-020)"
 | Task 5-7 | Stream 2 (Bank) | Tasks 1-3 | Task 4 Step 3 |
 | Task 8-9 | Convergence | Each other (truly independent) | Tasks 1-7 all done |
 | Task 10 | Dashboard | — | Tasks 1-9 done |
-| Task 11 | Integration | — | All done |
+| Task 11 | Tests | — | Tasks 1-9 done (can parallel with 10) |
+| Task 12 | Integration | — | All done |
 
 **Subagent assignment:**
 - Subagent A: Tasks 1, 2, 3 (Invoice stream)
 - Subagent B: Tasks 4 (steps 1-2 only), 5, 6 (Bank stream — code files, no migration yet)
 - **Sync point:** After Subagent A completes Task 1 Step 3 (invoices migration), Subagent B runs Task 4 Step 3 (bank migration), then Task 7
-- Main thread: Tasks 8, 9 (can run in parallel), then 10, 11
+- Main thread: Tasks 8, 9 (can run in parallel), then 10 + 11 (can parallel), then 12
