@@ -25,6 +25,8 @@ Dashboard:              US-018 → US-019 → US-020
 
 Streams 1 and 2 are built by parallel subagents. Reconciliation, categorization, and dashboard are sequential after both streams complete.
 
+**Data-level coupling note:** MockPlaidService generates deposit descriptions that reference broker names from `BROKER_NAMES` in `mock_dat.py` (import or duplicate a subset). This is a data dependency, not a code dependency — both streams can be built in parallel since the broker names list is stable and read-only.
+
 ## Data Models
 
 ### Invoice (`app/models/invoice.py`)
@@ -87,12 +89,21 @@ BankTransaction table:
   description         string
   amount              Numeric(10,2)  (positive=deposit, negative=debit)
   category            string nullable
-  is_deposit          bool
+  is_deposit          bool  (derived from amount sign; kept for query convenience, always set to amount > 0)
   is_reconciled       bool, default=false
   matched_invoice_id  int FK → invoices.id nullable
   raw_data            JSON nullable
   created_at          datetime, server_default=now()
 ```
+
+### Relationships
+
+Follow Phase 1 pattern with explicit `relationship()` declarations:
+- `Invoice.carrier` → `CarrierProfile` (many-to-one)
+- `BankConnection.carrier` → `CarrierProfile` (many-to-one)
+- `BankConnection.transactions` → `BankTransaction` (one-to-many, cascade delete-orphan)
+- `BankTransaction.bank_connection` → `BankConnection` (many-to-one)
+- `BankTransaction.matched_invoice` → `Invoice` (many-to-one, nullable)
 
 ### Migration Strategy
 
@@ -102,20 +113,23 @@ Invoice migration runs first (BankTransaction has FK to invoices). Each stream c
 
 ### Invoice Schemas (`app/schemas/invoices.py`)
 
-- **InvoiceCreate**: carrier_id, broker_name, broker_mc, origin/dest city+state, amount, rate_per_mile, miles, due_date, notes (optional)
-- **InvoiceFromLoadCreate**: carrier_id, broker_name, broker_mc, origin/dest city+state, rate_total, rate_per_mile, miles, load_reference (optional). Auto-sets invoice_date=today, due_date=today+30, status=draft.
+- **InvoiceCreate**: carrier_id, broker_name, broker_mc, origin/dest city+state, amount, rate_per_mile, miles, invoice_date (default=date.today()), due_date, notes (optional)
+- **InvoiceFromLoadCreate**: carrier_id, broker_name, broker_mc, origin/dest city+state, rate_total, rate_per_mile, miles, load_reference (optional). `rate_total` maps to `Invoice.amount`. Auto-sets invoice_date=today, due_date=today+30, status=draft.
 - **InvoiceUpdate**: all fields optional — for status changes, payment info, notes
 - **InvoiceResponse**: full model, `from_attributes=True`
 
+No DELETE endpoint for invoices — invoices are never deleted, only status-changed (for audit trail integrity).
+
 ### Bank Schemas (`app/schemas/bank.py`)
 
+- **PlaidLinkRequest**: carrier_id (int) — request body for Plaid link endpoint
 - **BankConnectionResponse**: id, carrier_id, institution_name, account_name, account_mask, connection_type, is_active, last_synced_at, created_at
 - **BankTransactionResponse**: id, transaction_id, date, description, amount, category, is_deposit, is_reconciled, matched_invoice_id, created_at
 - **CSVUploadResponse**: `{imported: int, skipped: int, total_rows: int}`
 - **ReconciliationResponse**: `{matched_count: int, unmatched_deposits: list, newly_paid_invoices: list, needs_review: list}`
 - **CategorizationResponse**: `{categorized_count: int, by_category: dict}`
 
-No create schemas for bank connections or transactions — those are created internally by service calls.
+No create schemas for transactions — those are created internally by sync/upload service calls. PlaidLinkRequest is the only input schema for bank connections.
 
 ## API Routes
 
@@ -138,10 +152,10 @@ No create schemas for bank connections or transactions — those are created int
 | GET | /api/bank-connections?carrier_id={id} | List connected accounts |
 | DELETE | /api/bank-connections/{id} | Soft delete (is_active=false) |
 | POST | /api/bank-connections/{id}/sync | Pull transactions via MockPlaidService |
-| POST | /api/bank-connections/upload | CSV upload, creates manual connection + transactions |
+| POST | /api/bank-connections/upload | CSV upload (carrier_id + file), creates/reuses manual connection + transactions |
 | GET | /api/transactions?bank_connection_id={id} | List transactions |
 | GET | /api/transactions?bank_connection_id={id}&is_reconciled=false | Filter unreconciled |
-| POST | /api/reconcile?carrier_id={id} | Trigger auto-reconciliation |
+| POST | /api/reconcile?carrier_id={id} | Trigger auto-reconciliation (lives in bank.py despite top-level path) |
 | POST | /api/transactions/categorize?bank_connection_id={id} | Trigger categorization |
 
 All routes registered in `app/main.py` via `app.include_router()`.
@@ -169,6 +183,9 @@ Same swap pattern as MockDATService.
 - Fuzzy name normalization: lowercase, strip suffixes (logistics, freight, inc, llc, corp, co, transportation, trucking, brokerage, services, group)
 - On match: invoice status → paid, invoice payment_date → transaction date, transaction is_reconciled → true, transaction matched_invoice_id → invoice id
 - On ambiguous match (multiple invoices for one deposit): skip auto-match, add to needs_review
+- On ambiguous reverse (multiple deposits for one invoice): match the first chronological deposit, leave others unmatched
+- Skips invoices already marked as paid (idempotent — safe to run multiple times)
+- Only processes deposits where is_reconciled=false and invoices where status in (outstanding, sent, overdue)
 - Returns: matched_count, unmatched_deposits, newly_paid_invoices, needs_review
 
 ### TransactionCategorizationService (`app/services/categorization.py`)
@@ -209,6 +226,22 @@ Extends existing `dashboard.html` with a new **Bookkeeper** tab. Single-file app
 - Auto-refresh invoice + transaction lists after reconciliation
 
 All interactions via fetch() with no page reloads.
+
+## CSV Upload Specification
+
+**Column matching** (case-insensitive, flexible naming):
+- Date column: "Date", "Transaction Date", "Posted Date", "DATE"
+- Description column: "Description", "Memo", "Details", "Transaction"
+- Amount column: "Amount", "AMOUNT" (single column, negative=debit, positive=credit)
+- Alternate: separate "Debit" and "Credit" columns (both positive values)
+
+**Processing:**
+- Uses Python `csv.Sniffer` for delimiter detection (comma, tab, pipe)
+- Generates `transaction_id` as SHA-256 hash of `f"{date}|{description}|{amount}"` to enable deduplication
+- Reuses existing manual BankConnection for the same carrier (queries for `carrier_id + connection_type=manual`), creates one if none exists
+- Skips rows where transaction_id already exists in DB
+- Returns 400 if no recognized columns found
+- No file size limit for MVP (reasonable assumption: bank statements are small)
 
 ## Architecture Decisions
 
