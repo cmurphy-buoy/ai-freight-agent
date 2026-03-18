@@ -13,10 +13,14 @@ from app.models.bank import BankConnection, BankTransaction, ConnectionType
 from app.schemas.bank import (
     BankConnectionResponse,
     BankTransactionResponse,
+    CategorizationResponse,
     CSVUploadResponse,
     PlaidLinkRequest,
+    ReconciliationResponse,
 )
+from app.services.categorization import TransactionCategorizationService
 from app.services.mock_plaid import MockPlaidService
+from app.services.reconciliation import ReconciliationService
 
 router = APIRouter(prefix="/api", tags=["bank"])
 
@@ -302,3 +306,31 @@ async def list_transactions(
 
     result = await db.execute(query)
     return result.scalars().all()
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation
+# ---------------------------------------------------------------------------
+
+
+@router.post("/reconcile", response_model=ReconciliationResponse)
+async def reconcile(carrier_id: int = Query(...), db: AsyncSession = Depends(get_db)):
+    """Match unreconciled deposits to outstanding invoices for a carrier."""
+    service = ReconciliationService(db)
+    result = await service.reconcile(carrier_id)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Categorization
+# ---------------------------------------------------------------------------
+
+
+@router.post("/transactions/categorize", response_model=CategorizationResponse)
+async def categorize_transactions(
+    bank_connection_id: int = Query(...), db: AsyncSession = Depends(get_db)
+):
+    """Categorize uncategorized transactions by keyword matching."""
+    service = TransactionCategorizationService(db)
+    result = await service.categorize(bank_connection_id)
+    return result
