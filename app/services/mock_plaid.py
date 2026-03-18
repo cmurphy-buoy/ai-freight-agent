@@ -102,6 +102,10 @@ class MockPlaidService:
             ("ATM WITHDRAWAL", -random.uniform(40, 200)),
             ("WALMART SUPERCENTER", -random.uniform(20, 100)),
             ("DRIVER PAYROLL DIRECT DEP", -random.uniform(1500, 3500)),
+            ("BLUE BEACON TRUCK WASH", -random.uniform(30, 75)),
+            ("SPEEDWAY GAS #2941", -random.uniform(100, 350)),
+            ("IPASS TOLL REPLENISH", -random.uniform(40, 100)),
+            ("TA PETRO #0182", -random.uniform(200, 500)),
         ]
         for desc, amt in expenses:
             txn_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
