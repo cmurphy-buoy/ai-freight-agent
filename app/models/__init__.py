@@ -10,5 +10,10 @@ from app.models.base import Base
 from app.models.carrier import CarrierProfile
 from app.models.truck import Truck, PreferredLane, EquipmentType
 from app.models.invoice import Invoice, InvoiceStatus
+from app.models.bank import BankConnection, BankTransaction, ConnectionType
 
-__all__ = ["Base", "CarrierProfile", "Truck", "PreferredLane", "EquipmentType", "Invoice", "InvoiceStatus"]
+__all__ = [
+    "Base", "CarrierProfile", "Truck", "PreferredLane", "EquipmentType",
+    "Invoice", "InvoiceStatus",
+    "BankConnection", "BankTransaction", "ConnectionType",
+]
