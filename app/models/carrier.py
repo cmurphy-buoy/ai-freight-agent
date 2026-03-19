@@ -33,6 +33,7 @@ class CarrierProfile(Base):
     contact_email: Mapped[str] = mapped_column(String(200), nullable=False)
     contact_phone: Mapped[str] = mapped_column(String(20), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    api_token: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
     # Relationship — one carrier can have many trucks (set up in US-003)

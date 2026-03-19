@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import generate_api_token
 from app.db.database import get_db
 from app.models.carrier import CarrierProfile
 from app.schemas import CarrierProfileCreate, CarrierProfileResponse, CarrierProfileUpdate
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/api/carriers", tags=["carriers"])
 async def create_carrier(data: CarrierProfileCreate, db: AsyncSession = Depends(get_db)):
     """Create a new carrier profile."""
     carrier = CarrierProfile(**data.model_dump())
+    carrier.api_token = generate_api_token()
     db.add(carrier)
     try:
         await db.commit()
@@ -61,3 +63,16 @@ async def update_carrier(carrier_id: int, data: CarrierProfileUpdate, db: AsyncS
     await db.commit()
     await db.refresh(carrier)
     return carrier
+
+
+@router.post("/{carrier_id}/token")
+async def regenerate_token(carrier_id: int, db: AsyncSession = Depends(get_db)):
+    """Regenerate an API token for a carrier."""
+    result = await db.execute(select(CarrierProfile).where(CarrierProfile.id == carrier_id))
+    carrier = result.scalar_one_or_none()
+    if not carrier:
+        raise HTTPException(status_code=404, detail="Carrier not found")
+    carrier.api_token = generate_api_token()
+    await db.commit()
+    await db.refresh(carrier)
+    return {"api_token": carrier.api_token}

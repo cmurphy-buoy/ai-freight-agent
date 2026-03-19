@@ -84,6 +84,7 @@ class CarrierProfileResponse(BaseModel):
     contact_name: str
     contact_email: str
     contact_phone: str
+    api_token: str | None = None
     created_at: datetime
     updated_at: datetime
 

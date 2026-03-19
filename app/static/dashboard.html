@@ -342,6 +342,7 @@
         <button class="tab" onclick="switchTab('search')">Search Loads</button>
         <button class="tab" onclick="switchTab('lanes')">Preferred Lanes</button>
         <button class="tab" onclick="switchTab('bookkeeper')">Bookkeeper</button>
+        <button class="tab" onclick="switchTab('reports')">Reports</button>
     </div>
 
     <!-- ===== TAB 1: SETUP ===== -->
@@ -691,6 +692,63 @@
             </div>
         </div>
     </div>
+
+    <!-- ===== TAB 5: REPORTS ===== -->
+    <div id="tab-reports" class="tab-content">
+        <div class="card">
+            <div class="section-header">
+                <h2>Profit &amp; Loss</h2>
+                <div class="controls-row" style="margin-bottom:0">
+                    <select id="report-period" onchange="loadProfitLoss()" style="width:auto">
+                        <option value="month">This Month</option>
+                        <option value="quarter">This Quarter</option>
+                        <option value="year">This Year</option>
+                        <option value="all">All Time</option>
+                    </select>
+                </div>
+            </div>
+            <div class="stats-bar" id="pnl-stats">
+                <div class="stat">
+                    <div class="stat-value amount-positive" id="pnl-revenue">$0</div>
+                    <div class="stat-label">Revenue</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value amount-negative" id="pnl-expenses">$0</div>
+                    <div class="stat-label">Expenses</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="pnl-net">$0</div>
+                    <div class="stat-label">Net Profit</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="pnl-margin">0%</div>
+                    <div class="stat-label">Margin</div>
+                </div>
+            </div>
+            <div id="expense-breakdown"></div>
+        </div>
+
+        <div class="card">
+            <h2>Monthly Trend</h2>
+            <div id="monthly-trend-container">
+                <div class="empty-state"><p>Loading monthly data...</p></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Outstanding Receivables</h2>
+            <div class="stats-bar">
+                <div class="stat">
+                    <div class="stat-value" style="color:#fbbf24" id="pnl-outstanding">$0</div>
+                    <div class="stat-label">Total Owed</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="pnl-outstanding-count">0</div>
+                    <div class="stat-label">Invoices</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -733,6 +791,14 @@
             loadDispatches();
             loadBankConnections();
         }
+        if (name === 'reports') {
+            if (!carrierId) {
+                document.getElementById('monthly-trend-container').innerHTML = '<div class="empty-state"><p>Save a carrier profile in the Setup tab first.</p></div>';
+                return;
+            }
+            loadProfitLoss();
+            loadMonthlyTrend();
+        }
     }
 
     // ===== SHOW MESSAGES =====
@@ -763,7 +829,11 @@
             if (resp.ok) {
                 carrierId = result.id;
                 localStorage.setItem('carrierId', carrierId);
-                showMsg('carrier-msg', `Carrier saved! ID: ${result.id}`, 'success');
+                if (result.api_token) {
+                    showMsg('carrier-msg', `Carrier saved! ID: ${result.id} | API Token: ${result.api_token}`, 'success');
+                } else {
+                    showMsg('carrier-msg', `Carrier saved! ID: ${result.id}`, 'success');
+                }
             } else {
                 showMsg('carrier-msg', `Error: ${JSON.stringify(result.detail)}`, 'error');
             }
@@ -1578,6 +1648,89 @@
             alert('Invoice marked as paid. Run "Reconcile Now" again to properly reconcile remaining transactions.');
         } catch (e) {
             console.error('Manual assignment failed:', e);
+        }
+    }
+
+    // ===== REPORTS =====
+    async function loadProfitLoss() {
+        if (!carrierId) return;
+        const period = document.getElementById('report-period')?.value || 'month';
+        const today = new Date();
+        let startDate, endDate = today.toISOString().split('T')[0];
+
+        if (period === 'month') {
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+        } else if (period === 'quarter') {
+            const qMonth = Math.floor(today.getMonth() / 3) * 3;
+            startDate = new Date(today.getFullYear(), qMonth, 1).toISOString().split('T')[0];
+        } else if (period === 'year') {
+            startDate = new Date(today.getFullYear(), 0, 1).toISOString().split('T')[0];
+        } else {
+            startDate = '2020-01-01';
+        }
+
+        try {
+            const resp = await fetch(`${API}/api/reports/profit-loss?carrier_id=${carrierId}&start_date=${startDate}&end_date=${endDate}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            document.getElementById('pnl-revenue').textContent = `$${data.revenue.total.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('pnl-expenses').textContent = `$${data.expenses.total.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+
+            const netEl = document.getElementById('pnl-net');
+            netEl.textContent = `$${Math.abs(data.net_profit).toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            netEl.className = data.net_profit >= 0 ? 'stat-value amount-positive' : 'stat-value amount-negative';
+            if (data.net_profit < 0) netEl.textContent = '-' + netEl.textContent;
+
+            document.getElementById('pnl-margin').textContent = `${data.profit_margin}%`;
+            document.getElementById('pnl-outstanding').textContent = `$${data.outstanding_receivables.total.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('pnl-outstanding-count').textContent = data.outstanding_receivables.count;
+
+            // Expense breakdown table
+            const cats = Object.entries(data.expenses.by_category);
+            if (cats.length > 0) {
+                let html = '<table class="results-table"><thead><tr><th>Category</th><th>Amount</th><th>Transactions</th></tr></thead><tbody>';
+                cats.sort((a, b) => b[1].amount - a[1].amount);
+                cats.forEach(([cat, info]) => {
+                    html += `<tr><td>${escapeHtml(cat.replace(/_/g, ' '))}</td><td class="amount-negative">$${info.amount.toFixed(2)}</td><td>${info.count}</td></tr>`;
+                });
+                html += '</tbody></table>';
+                document.getElementById('expense-breakdown').innerHTML = html;
+            } else {
+                document.getElementById('expense-breakdown').innerHTML = '';
+            }
+        } catch (e) {
+            console.error('Failed to load P&L:', e);
+        }
+    }
+
+    async function loadMonthlyTrend() {
+        if (!carrierId) return;
+        try {
+            const resp = await fetch(`${API}/api/reports/monthly?carrier_id=${carrierId}&months=6`);
+            if (!resp.ok) return;
+            const months = await resp.json();
+
+            if (months.length === 0) {
+                document.getElementById('monthly-trend-container').innerHTML = '<div class="empty-state"><p>No data yet.</p></div>';
+                return;
+            }
+
+            let html = '<table class="results-table"><thead><tr><th>Month</th><th>Revenue</th><th>Expenses</th><th>Net Profit</th><th>Margin</th></tr></thead><tbody>';
+            months.forEach(m => {
+                const netClass = m.net_profit >= 0 ? 'amount-positive' : 'amount-negative';
+                html += `<tr>
+                    <td>${escapeHtml(m.month_label)}</td>
+                    <td class="amount-positive">$${m.revenue.total.toFixed(2)}</td>
+                    <td class="amount-negative">$${m.expenses.total.toFixed(2)}</td>
+                    <td class="${netClass}">$${m.net_profit.toFixed(2)}</td>
+                    <td>${m.profit_margin}%</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            document.getElementById('monthly-trend-container').innerHTML = html;
+        } catch (e) {
+            console.error('Failed to load monthly trend:', e);
         }
     }
 </script>
