@@ -24,17 +24,30 @@ An AI-powered freight agent for small trucking carriers. Search loads from DAT a
 - Transaction categorization: fuel, tolls, insurance, maintenance, lumper, scale, parking, subscriptions
 - Bookkeeper dashboard with invoice management, bank transactions, and reconciliation panel
 
-### Phase 3+ (Planned)
-- Real DAT API integration (swap MockDATService for RealDATService)
-- Real Truckstop API integration (same swap pattern)
-- Real Plaid API integration (swap MockPlaidService for RealPlaidService)
-- Factoring company APIs (RTS Financial, Triumph, OTR Solutions)
-- Driver dispatch workflow
-- Automated bidding
-- Carrier packet submission
-- Broker communication bot
-- Authentication / multi-user
-- Profit/loss reports
+### Phase 3: Driver Dispatch + Factoring (Complete)
+- Dispatch workflow: assign drivers to booked loads, track status through full lifecycle
+- Status progression: assigned → en route → at pickup → loaded → en route → at delivery → delivered
+- Auto-timestamps on pickup and delivery events
+- Invoice status auto-promotion (draft → sent → outstanding) based on dispatch events
+- Factoring company integration: submit invoices to RTS Financial, Triumph Pay, or OTR Solutions
+- Mock factoring service with realistic advance rates (95-97%) and fee calculations
+
+### Phase 4: Reports + Authentication (Complete)
+- Profit & Loss reports: revenue vs expenses by period (month, quarter, year, all time)
+- Expense breakdown by category with transaction counts
+- Monthly trend analysis (6-month rolling view)
+- Outstanding receivables tracking
+- API token authentication per carrier (generated on profile creation)
+- Token regeneration endpoint
+
+### Phase 5: Automated Bidding + Broker Communications (Complete)
+- Auto-bidding engine: scores loads and places bids on top matches above minimum score
+- Three bid strategies: market (0%), aggressive (-5%), conservative (+5%)
+- Bid tracking with full lifecycle (pending → submitted → accepted/rejected/expired)
+- Broker communication bot: AI-generated check call emails for each dispatch status
+- Rate confirmation request generator
+- Invoice payment reminder generator with overdue days tracking
+- 49 total API endpoints across all phases
 
 ## Tech Stack
 
