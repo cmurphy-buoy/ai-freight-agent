@@ -100,3 +100,30 @@ async def search_loads(
         "total_results": len(scored_loads),
         "loads": scored_loads,
     }
+
+
+@router.get("/api/loads/browse")
+async def browse_loads(
+    equipment_type: str | None = Query(None, description="Filter by equipment type"),
+    origin_state: str | None = Query(None, description="Filter by origin state"),
+    limit: int = Query(50, description="Max results to return"),
+):
+    """
+    Browse all available loads from both boards without needing a truck.
+    No scoring — just raw load data sorted by rate/mile descending.
+    """
+    all_loads = dat_service.get_all_loads() + truckstop_service.get_all_loads()
+
+    if equipment_type:
+        all_loads = [l for l in all_loads if l["equipment_type"] == equipment_type]
+    if origin_state:
+        all_loads = [l for l in all_loads if l["origin_state"] == origin_state.upper()]
+
+    # Sort by rate_per_mile descending (best paying first)
+    all_loads.sort(key=lambda l: l["rate_per_mile"], reverse=True)
+    all_loads = all_loads[:limit]
+
+    return {
+        "total_results": len(all_loads),
+        "loads": all_loads,
+    }

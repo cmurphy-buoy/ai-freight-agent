@@ -425,12 +425,41 @@
         <div class="card">
             <div class="search-bar">
                 <div class="form-group">
-                    <label>Select Truck</label>
-                    <select id="search-truck-select">
-                        <option value="">-- Select a truck --</option>
+                    <label>Equipment Type</label>
+                    <select id="browse-equipment">
+                        <option value="">All Types</option>
+                        <option value="dry_van">Dry Van</option>
+                        <option value="reefer">Reefer</option>
+                        <option value="flatbed">Flatbed</option>
+                        <option value="step_deck">Step Deck</option>
+                        <option value="power_only">Power Only</option>
                     </select>
                 </div>
-                <button class="btn btn-primary" onclick="searchLoads()">🔍 Search Loads</button>
+                <div class="form-group">
+                    <label>Origin State</label>
+                    <select id="browse-state">
+                        <option value="">All States</option>
+                        <option value="GA">Georgia</option>
+                        <option value="TX">Texas</option>
+                        <option value="FL">Florida</option>
+                        <option value="TN">Tennessee</option>
+                        <option value="NC">North Carolina</option>
+                        <option value="SC">South Carolina</option>
+                        <option value="AL">Alabama</option>
+                        <option value="LA">Louisiana</option>
+                        <option value="KY">Kentucky</option>
+                        <option value="VA">Virginia</option>
+                        <option value="AR">Arkansas</option>
+                        <option value="MS">Mississippi</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Match to Truck</label>
+                    <select id="search-truck-select">
+                        <option value="">-- Browse All --</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="searchLoads()">🔍 Search</button>
             </div>
         </div>
 
@@ -658,10 +687,13 @@
         document.querySelector(`[onclick="switchTab('${name}')"]`).classList.add('active');
         document.getElementById(`tab-${name}`).classList.add('active');
 
-        if (name === 'search' || name === 'lanes') {
+        if (name === 'search') {
+            if (carrierId) loadTruckDropdowns();
+            browseLoads();
+        }
+        if (name === 'lanes') {
             if (!carrierId) {
-                const container = name === 'search' ? 'results-container' : 'lanes-list';
-                document.getElementById(container).innerHTML = '<div class="empty-state"><p>Save a carrier profile in the Setup tab first.</p></div>';
+                document.getElementById('lanes-list').innerHTML = '<div class="empty-state"><p>Save a carrier profile in the Setup tab first.</p></div>';
             } else {
                 loadTruckDropdowns();
             }
@@ -807,10 +839,29 @@
     }
 
     // ===== SEARCH LOADS =====
+    // Browse loads from both boards (no truck required)
+    async function browseLoads() {
+        const equip = document.getElementById('browse-equipment')?.value || '';
+        const state = document.getElementById('browse-state')?.value || '';
+        let url = `${API}/api/loads/browse?limit=50`;
+        if (equip) url += `&equipment_type=${equip}`;
+        if (state) url += `&origin_state=${state}`;
+
+        try {
+            const resp = await fetch(url);
+            const data = await resp.json();
+            renderLoadResults(data.loads, false);
+        } catch (e) {
+            document.getElementById('results-container').innerHTML =
+                `<div class="empty-state"><p>Network error: ${e.message}</p></div>`;
+        }
+    }
+
+    // Search loads matched to a specific truck (scored)
     async function searchLoads() {
         const truckId = document.getElementById('search-truck-select').value;
         if (!truckId) {
-            alert('Select a truck first');
+            browseLoads();
             return;
         }
         try {
@@ -822,39 +873,47 @@
                     `<div class="empty-state"><p>Error: ${data.detail}</p></div>`;
                 return;
             }
+            renderLoadResults(data.loads, true);
+        } catch (e) {
+            document.getElementById('results-container').innerHTML =
+                `<div class="empty-state"><p>Network error: ${e.message}</p></div>`;
+        }
+    }
 
-            const loads = data.loads;
+    // Shared renderer for both browse and search modes
+    function renderLoadResults(loads, scored) {
+        document.getElementById('stats-bar').style.display = 'flex';
+        document.getElementById('stat-total').textContent = loads.length;
 
-            // Stats
-            document.getElementById('stats-bar').style.display = 'flex';
-            document.getElementById('stat-total').textContent = loads.length;
+        if (loads.length === 0) {
+            document.getElementById('stat-avg-score').textContent = scored ? '0' : '--';
+            document.getElementById('stat-avg-rate').textContent = '$0';
+            document.getElementById('stat-best').textContent = scored ? '0' : '--';
+            document.getElementById('results-container').innerHTML =
+                '<div class="empty-state"><p>No loads match your filters. Try changing equipment type or origin state.</p></div>';
+            return;
+        }
 
-            if (loads.length === 0) {
-                document.getElementById('stat-avg-score').textContent = '0';
-                document.getElementById('stat-avg-rate').textContent = '$0';
-                document.getElementById('stat-best').textContent = '0';
-                document.getElementById('results-container').innerHTML =
-                    '<div class="empty-state"><p>No loads match your truck parameters. Try increasing deadhead miles or lowering your rate floor.</p></div>';
-                return;
-            }
+        const avgRate = (loads.reduce((s, l) => s + l.rate_per_mile, 0) / loads.length).toFixed(2);
+        document.getElementById('stat-avg-rate').textContent = `$${avgRate}`;
 
+        if (scored) {
             const avgScore = Math.round(loads.reduce((s, l) => s + l.score, 0) / loads.length);
-            const avgRate = (loads.reduce((s, l) => s + l.rate_per_mile, 0) / loads.length).toFixed(2);
-            const best = loads[0].score;
-
             document.getElementById('stat-avg-score').textContent = avgScore;
-            document.getElementById('stat-avg-rate').textContent = `$${avgRate}`;
-            document.getElementById('stat-best').textContent = best;
+            document.getElementById('stat-best').textContent = loads[0].score;
+        } else {
+            document.getElementById('stat-avg-score').textContent = '--';
+            document.getElementById('stat-best').textContent = '--';
+        }
 
-            // Table
-            let html = `<div style="overflow-x:auto;"><table class="results-table">
-                <thead><tr>
-                    <th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th>
-                    <th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th>
-                    <th>Pickup</th><th>Broker</th><th>Source</th>
-                </tr></thead><tbody>`;
+        let headers = scored
+            ? '<th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th>'
+            : '<th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Weight</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th>';
 
-            loads.forEach(l => {
+        let html = `<div style="overflow-x:auto;"><table class="results-table"><thead><tr>${headers}</tr></thead><tbody>`;
+
+        loads.forEach(l => {
+            if (scored) {
                 const scoreClass = l.score >= 70 ? 'score-green' : l.score >= 40 ? 'score-yellow' : 'score-red';
                 html += `<tr>
                     <td><span class="score-badge ${scoreClass}">${l.score}</span></td>
@@ -869,18 +928,32 @@
                     <td>${escapeHtml(l.broker_name)}</td>
                     <td><span class="status-badge ${l.source === 'DAT' ? 'badge-source-dat' : 'badge-source-ts'}">${escapeHtml(l.source || 'DAT')}</span></td>
                 </tr>`;
-            });
+            } else {
+                const weightStr = l.weight_lbs > 0 ? `${(l.weight_lbs/1000).toFixed(0)}k lbs` : 'N/A';
+                html += `<tr>
+                    <td>${escapeHtml(l.origin_city)}, ${escapeHtml(l.origin_state)}</td>
+                    <td>${escapeHtml(l.destination_city)}, ${escapeHtml(l.destination_state)}</td>
+                    <td>${l.miles}</td>
+                    <td>$${l.rate_per_mile.toFixed(2)}</td>
+                    <td>$${l.rate_total.toFixed(2)}</td>
+                    <td>${weightStr}</td>
+                    <td>${escapeHtml(l.equipment_type.replaceAll('_', ' '))}</td>
+                    <td>${escapeHtml(l.pickup_date)}</td>
+                    <td>${escapeHtml(l.broker_name)}</td>
+                    <td><span class="status-badge ${l.source === 'DAT' ? 'badge-source-dat' : 'badge-source-ts'}">${escapeHtml(l.source || 'DAT')}</span></td>
+                </tr>`;
+            }
+        });
 
-            html += '</tbody></table></div>';
-            document.getElementById('results-container').innerHTML = html;
-
-        } catch (e) {
-            document.getElementById('results-container').innerHTML =
-                `<div class="empty-state"><p>Network error: ${e.message}</p></div>`;
-        }
+        html += '</tbody></table></div>';
+        document.getElementById('results-container').innerHTML = html;
     }
 
     // ===== PREFERRED LANES =====
+    // Auto-filter on dropdown change
+    document.getElementById('browse-equipment')?.addEventListener('change', browseLoads);
+    document.getElementById('browse-state')?.addEventListener('change', browseLoads);
+
     const laneSelect = document.getElementById('lane-truck-select');
     laneSelect.addEventListener('change', loadLanes);
 
