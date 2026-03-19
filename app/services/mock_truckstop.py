@@ -28,7 +28,7 @@ def _generate_mc() -> str:
     return str(random.randint(200000, 899999))
 
 
-def _generate_truckstop_loads(count: int = 45) -> list[dict]:
+def _generate_truckstop_loads(count: int = 80) -> list[dict]:
     """
     Generate mock Truckstop.com loads.
 

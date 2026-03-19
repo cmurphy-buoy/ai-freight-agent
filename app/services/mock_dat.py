@@ -72,7 +72,7 @@ def _generate_mc() -> str:
     return str(random.randint(100000, 999999))
 
 
-def _generate_loads(count: int = 65) -> list[dict]:
+def _generate_loads(count: int = 120) -> list[dict]:
     """
     Generate a list of realistic mock loads.
 
