@@ -571,6 +571,8 @@
                         <option value="overdue">Overdue</option>
                         <option value="paid">Paid</option>
                         <option value="sent">Sent</option>
+                        <option value="factored">Factored</option>
+                        <option value="disputed">Disputed</option>
                     </select>
                     <button class="btn btn-success" onclick="toggleCreateInvoice()">+ Create Invoice</button>
                 </div>
@@ -635,8 +637,14 @@
 <script>
     const API = '';  // Same origin
 
+    // XSS protection helper
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
     // State
-    let carrierId = null;
+    let carrierId = localStorage.getItem('carrierId') ? parseInt(localStorage.getItem('carrierId')) : null;
     let trucks = [];
 
     // ===== TAB SWITCHING =====
@@ -646,8 +654,19 @@
         document.querySelector(`[onclick="switchTab('${name}')"]`).classList.add('active');
         document.getElementById(`tab-${name}`).classList.add('active');
 
-        if (name === 'search' || name === 'lanes') loadTruckDropdowns();
+        if (name === 'search' || name === 'lanes') {
+            if (!carrierId) {
+                const container = name === 'search' ? 'results-container' : 'lanes-list';
+                document.getElementById(container).innerHTML = '<div class="empty-state"><p>Save a carrier profile in the Setup tab first.</p></div>';
+            } else {
+                loadTruckDropdowns();
+            }
+        }
         if (name === 'bookkeeper') {
+            if (!carrierId) {
+                document.getElementById('invoice-table-container').innerHTML = '<div class="empty-state"><p>Save a carrier profile in the Setup tab first.</p></div>';
+                return;
+            }
             loadInvoices();
             loadBankConnections();
         }
@@ -680,6 +699,7 @@
             const result = await resp.json();
             if (resp.ok) {
                 carrierId = result.id;
+                localStorage.setItem('carrierId', carrierId);
                 showMsg('carrier-msg', `Carrier saved! ID: ${result.id}`, 'success');
             } else {
                 showMsg('carrier-msg', `Error: ${JSON.stringify(result.detail)}`, 'error');
@@ -725,17 +745,24 @@
             showMsg('truck-msg', `City "${city}, ${state}" not recognized. Try a major Southeast US city (Atlanta, Nashville, Charlotte, Dallas, etc.)`, 'error');
             return;
         }
+        const maxWeight = parseInt(document.getElementById('max_weight').value);
+        const maxDeadhead = parseInt(document.getElementById('max_deadhead').value);
+        const minRate = parseFloat(document.getElementById('min_rate').value);
+        if (isNaN(maxWeight) || isNaN(maxDeadhead) || isNaN(minRate)) {
+            showMsg('truck-msg', 'Max Weight, Max Deadhead, and Min Rate must be valid numbers.', 'error');
+            return;
+        }
         const data = {
             carrier_id: carrierId,
             name: document.getElementById('truck_name').value,
             equipment_type: document.getElementById('equipment_type').value,
-            max_weight_lbs: parseInt(document.getElementById('max_weight').value),
+            max_weight_lbs: maxWeight,
             current_city: city,
             current_state: state,
             current_lat: coords[0],
             current_lng: coords[1],
-            max_deadhead_miles: parseInt(document.getElementById('max_deadhead').value),
-            min_rate_per_mile: document.getElementById('min_rate').value,
+            max_deadhead_miles: maxDeadhead,
+            min_rate_per_mile: minRate,
         };
         try {
             const resp = await fetch(`${API}/api/trucks`, {
@@ -766,7 +793,7 @@
                 const current = sel.value;
                 sel.innerHTML = '<option value="">-- Select a truck --</option>';
                 trucks.forEach(t => {
-                    sel.innerHTML += `<option value="${t.id}">${t.name} (${t.equipment_type})</option>`;
+                    sel.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)} (${escapeHtml(t.equipment_type)})</option>`;
                 });
                 sel.value = current;
             });
@@ -827,15 +854,15 @@
                 const scoreClass = l.score >= 70 ? 'score-green' : l.score >= 40 ? 'score-yellow' : 'score-red';
                 html += `<tr>
                     <td><span class="score-badge ${scoreClass}">${l.score}</span></td>
-                    <td>${l.origin_city}, ${l.origin_state}</td>
-                    <td>${l.destination_city}, ${l.destination_state}</td>
+                    <td>${escapeHtml(l.origin_city)}, ${escapeHtml(l.origin_state)}</td>
+                    <td>${escapeHtml(l.destination_city)}, ${escapeHtml(l.destination_state)}</td>
                     <td>${l.miles}</td>
                     <td>$${l.rate_per_mile.toFixed(2)}</td>
                     <td>$${l.rate_total.toFixed(2)}</td>
                     <td>${l.deadhead_miles} mi</td>
-                    <td>${l.equipment_type.replace('_', ' ')}</td>
-                    <td>${l.pickup_date}</td>
-                    <td>${l.broker_name}</td>
+                    <td>${escapeHtml(l.equipment_type.replaceAll('_', ' '))}</td>
+                    <td>${escapeHtml(l.pickup_date)}</td>
+                    <td>${escapeHtml(l.broker_name)}</td>
                 </tr>`;
             });
 
@@ -873,7 +900,7 @@
             lanes.forEach(l => {
                 html += `<div class="lane-item">
                     <div>
-                        <span class="lane-route">${l.origin_city}, ${l.origin_state} → ${l.destination_city}, ${l.destination_state}</span>
+                        <span class="lane-route">${escapeHtml(l.origin_city)}, ${escapeHtml(l.origin_state)} → ${escapeHtml(l.destination_city)}, ${escapeHtml(l.destination_state)}</span>
                         <span class="lane-weight">Priority: ${l.priority_weight}/10</span>
                     </div>
                     <button class="btn btn-danger" onclick="deleteLane(${truckId}, ${l.id})">Remove</button>
@@ -947,10 +974,12 @@
 
         try {
             const resp = await fetch(url);
+            if (!resp.ok) { console.error('Failed to load invoices'); return; }
             const invoices = await resp.json();
 
             // Update stats
             const allResp = await fetch(`${API}/api/invoices?carrier_id=${carrierId}`);
+            if (!allResp.ok) { console.error('Failed to load all invoices for stats'); return; }
             const allInvoices = await allResp.json();
 
             const outstanding = allInvoices.filter(i => i.status === 'outstanding').reduce((s, i) => s + parseFloat(i.amount), 0);
@@ -983,13 +1012,13 @@
 
                 html += `<tr>
                     <td>${inv.id}</td>
-                    <td>${inv.broker_name}</td>
-                    <td>${inv.origin_city}, ${inv.origin_state} → ${inv.destination_city}, ${inv.destination_state}</td>
+                    <td>${escapeHtml(inv.broker_name)}</td>
+                    <td>${escapeHtml(inv.origin_city)}, ${escapeHtml(inv.origin_state)} → ${escapeHtml(inv.destination_city)}, ${escapeHtml(inv.destination_state)}</td>
                     <td>$${parseFloat(inv.amount).toFixed(2)}</td>
                     <td>$${parseFloat(inv.rate_per_mile).toFixed(2)}</td>
-                    <td>${inv.invoice_date}</td>
-                    <td>${inv.due_date}</td>
-                    <td><span class="status-badge ${statusClass}">${inv.status}</span></td>
+                    <td>${escapeHtml(inv.invoice_date)}</td>
+                    <td>${escapeHtml(inv.due_date)}</td>
+                    <td><span class="status-badge ${statusClass}">${escapeHtml(inv.status)}</span></td>
                     <td>${actions}</td>
                 </tr>`;
             });
@@ -1002,6 +1031,13 @@
 
     async function createInvoice() {
         if (!carrierId) { showMsg('invoice-create-msg', 'Save a carrier first!', 'error'); return; }
+        const invAmount = parseFloat(document.getElementById('inv_amount').value);
+        const invRate = parseFloat(document.getElementById('inv_rate').value);
+        const invMiles = parseInt(document.getElementById('inv_miles').value);
+        if (isNaN(invAmount) || isNaN(invRate) || isNaN(invMiles)) {
+            showMsg('invoice-create-msg', 'Amount, Rate/Mile, and Miles must be valid numbers.', 'error');
+            return;
+        }
         const data = {
             carrier_id: carrierId,
             broker_name: document.getElementById('inv_broker_name').value,
@@ -1010,9 +1046,9 @@
             origin_state: document.getElementById('inv_origin_state').value.toUpperCase(),
             destination_city: document.getElementById('inv_dest_city').value,
             destination_state: document.getElementById('inv_dest_state').value.toUpperCase(),
-            amount: parseFloat(document.getElementById('inv_amount').value),
-            rate_per_mile: parseFloat(document.getElementById('inv_rate').value),
-            miles: parseInt(document.getElementById('inv_miles').value),
+            amount: invAmount,
+            rate_per_mile: invRate,
+            miles: invMiles,
             due_date: document.getElementById('inv_due_date').value,
         };
         try {
@@ -1038,14 +1074,19 @@
         const body = { status };
         if (status === 'paid') body.payment_date = new Date().toISOString().split('T')[0];
         try {
-            await fetch(`${API}/api/invoices/${invoiceId}`, {
+            const resp = await fetch(`${API}/api/invoices/${invoiceId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(body),
             });
+            if (!resp.ok) {
+                alert(`Failed to update invoice #${invoiceId} to "${status}".`);
+                return;
+            }
             loadInvoices();
         } catch (e) {
             console.error('Failed to update invoice:', e);
+            alert('Network error updating invoice.');
         }
     }
 
@@ -1068,6 +1109,7 @@
 
     async function loadBankConnections() {
         if (!carrierId) return;
+        activeBankConnectionId = null;
         try {
             const resp = await fetch(`${API}/api/bank-connections?carrier_id=${carrierId}`);
             const connections = await resp.json();
@@ -1082,8 +1124,8 @@
                 const synced = conn.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : 'Never';
                 html += `<div class="bank-conn-item">
                     <div>
-                        <strong>${conn.institution_name}</strong> — ...${conn.account_mask}
-                        <br><span style="font-size:12px;color:#94a3b8">Last synced: ${synced}</span>
+                        <strong>${escapeHtml(conn.institution_name)}</strong> — ...${escapeHtml(conn.account_mask)}
+                        <br><span style="font-size:12px;color:#94a3b8">Last synced: ${escapeHtml(synced)}</span>
                     </div>
                     <div class="controls-row" style="margin-bottom:0">
                         <button class="btn-sm btn-sm-blue" onclick="syncTransactions(${conn.id})">Sync Now</button>
@@ -1101,12 +1143,17 @@
 
     async function syncTransactions(connectionId) {
         try {
-            await fetch(`${API}/api/bank-connections/${connectionId}/sync`, {method: 'POST'});
+            const resp = await fetch(`${API}/api/bank-connections/${connectionId}/sync`, {method: 'POST'});
+            if (!resp.ok) {
+                alert('Failed to sync transactions.');
+                return;
+            }
             activeBankConnectionId = connectionId;
             loadBankConnections();
             loadTransactions();
         } catch (e) {
             console.error('Sync failed:', e);
+            alert('Network error syncing transactions.');
         }
     }
 
@@ -1158,15 +1205,14 @@
             txns.forEach(t => {
                 const amtClass = t.is_deposit ? 'amount-positive' : 'amount-negative';
                 const amtStr = (t.is_deposit ? '+' : '') + `$${Math.abs(parseFloat(t.amount)).toFixed(2)}`;
-                const cat = t.category ? `<span class="status-badge badge-draft">${t.category}</span>` : '';
                 const recon = t.is_reconciled ? '\u2713' : '';
                 const invoice = t.matched_invoice_id ? `#${t.matched_invoice_id}` : '';
 
                 html += `<tr>
-                    <td>${t.date}</td>
-                    <td>${t.description}</td>
+                    <td>${escapeHtml(t.date)}</td>
+                    <td>${escapeHtml(t.description)}</td>
                     <td class="${amtClass}">${amtStr}</td>
-                    <td>${cat}</td>
+                    <td>${t.category ? `<span class="status-badge badge-draft">${escapeHtml(t.category)}</span>` : ''}</td>
                     <td>${recon}</td>
                     <td>${invoice}</td>
                 </tr>`;
@@ -1207,7 +1253,7 @@
             if (data.newly_paid_invoices.length > 0) {
                 paidHtml = '<h3 style="font-size:13px;color:#34d399;margin:8px 0">Newly Paid:</h3>';
                 data.newly_paid_invoices.forEach(inv => {
-                    paidHtml += `<div class="recon-result recon-match">\u2713 ${inv.broker_name} \u2014 $${parseFloat(inv.amount).toFixed(2)}</div>`;
+                    paidHtml += `<div class="recon-result recon-match">\u2713 ${escapeHtml(inv.broker_name)} \u2014 $${parseFloat(inv.amount).toFixed(2)}</div>`;
                 });
             }
             document.getElementById('recon-newly-paid').innerHTML = paidHtml;
@@ -1223,11 +1269,11 @@
                 data.unmatched_deposits.forEach(dep => {
                     let opts = '<option value="">Assign to invoice...</option>';
                     outstandingInvoices.forEach(inv => {
-                        opts += `<option value="${inv.id}">#${inv.id} ${inv.broker_name} $${parseFloat(inv.amount).toFixed(2)}</option>`;
+                        opts += `<option value="${inv.id}">#${inv.id} ${escapeHtml(inv.broker_name)} $${parseFloat(inv.amount).toFixed(2)}</option>`;
                     });
                     unmHtml += `<div class="recon-result recon-unmatched">
-                        $${parseFloat(dep.amount).toFixed(2)} \u2014 ${dep.description} (${dep.date})
-                        <select style="margin-left:8px;font-size:12px" onchange="manualAssign(${dep.id}, this.value, '${dep.date}')">${opts}</select>
+                        $${parseFloat(dep.amount).toFixed(2)} \u2014 ${escapeHtml(dep.description)} (${escapeHtml(dep.date)})
+                        <select style="margin-left:8px;font-size:12px" onchange="manualAssign(${dep.id}, this.value, '${escapeHtml(dep.date)}')">${opts}</select>
                     </div>`;
                 });
             }
@@ -1238,8 +1284,8 @@
             if (data.needs_review.length > 0) {
                 revHtml = '<h3 style="font-size:13px;color:#fbbf24;margin:8px 0">Needs Review (multiple matches):</h3>';
                 data.needs_review.forEach(item => {
-                    const invoiceList = item.possible_invoices.map(i => `#${i.id} ${i.broker_name}`).join(', ');
-                    revHtml += `<div class="recon-result">$${parseFloat(item.deposit.amount).toFixed(2)} \u2014 ${item.deposit.description} \u2192 Could match: ${invoiceList}</div>`;
+                    const invoiceList = item.possible_invoices.map(i => `#${i.id} ${escapeHtml(i.broker_name)}`).join(', ');
+                    revHtml += `<div class="recon-result">$${parseFloat(item.deposit.amount).toFixed(2)} \u2014 ${escapeHtml(item.deposit.description)} \u2192 Could match: ${invoiceList}</div>`;
                 });
             }
             document.getElementById('recon-review-list').innerHTML = revHtml;
@@ -1252,18 +1298,24 @@
         }
     }
 
+    // Restore truck dropdowns on page load if carrierId was persisted
+    if (carrierId) { loadTruckDropdowns(); }
+
     async function manualAssign(depositId, invoiceId, depositDate) {
         if (!invoiceId) return;
         try {
-            await fetch(`${API}/api/invoices/${invoiceId}`, {
+            const resp = await fetch(`${API}/api/invoices/${invoiceId}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({status: 'paid', payment_date: depositDate}),
             });
+            if (!resp.ok) {
+                alert('Failed to update invoice status.');
+                return;
+            }
             loadInvoices();
             loadTransactions();
-            // Re-run reconciliation display refresh
-            runReconciliation();
+            alert('Invoice marked as paid. Run "Reconcile Now" again to properly reconcile remaining transactions.');
         } catch (e) {
             console.error('Manual assignment failed:', e);
         }
