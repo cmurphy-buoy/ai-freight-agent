@@ -11,6 +11,7 @@ BEGINNER NOTE:
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
@@ -25,7 +26,11 @@ async def create_carrier(data: CarrierProfileCreate, db: AsyncSession = Depends(
     """Create a new carrier profile."""
     carrier = CarrierProfile(**data.model_dump())
     db.add(carrier)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A carrier with this MC or DOT number already exists")
     await db.refresh(carrier)
     return carrier
 

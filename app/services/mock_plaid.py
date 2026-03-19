@@ -1,13 +1,15 @@
+import hashlib
 import random
-import uuid
 from datetime import date, timedelta
 from decimal import Decimal
 
 from app.services.mock_dat import BROKER_NAMES
 
 
-def _generate_transaction_id() -> str:
-    return f"plaid-txn-{uuid.uuid4().hex[:12]}"
+def _generate_transaction_id(description: str, amount: float, txn_date: str) -> str:
+    """Generate a deterministic transaction ID from content so dedup works on re-sync."""
+    raw = f"{txn_date}|{description}|{amount}"
+    return f"plaid-{hashlib.sha256(raw.encode()).hexdigest()[:16]}"
 
 
 class MockPlaidService:
@@ -45,7 +47,7 @@ class MockPlaidService:
             txn_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
             amount = round(random.uniform(800, 4500), 2)
             transactions.append({
-                "transaction_id": _generate_transaction_id(),
+                "transaction_id": _generate_transaction_id(f"DEPOSIT - {broker} MC#{mc}", amount, str(txn_date)),
                 "date": str(txn_date),
                 "description": f"DEPOSIT - {broker} MC#{mc}",
                 "amount": amount,
@@ -63,10 +65,11 @@ class MockPlaidService:
             txn_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
             amount = round(random.uniform(1000, 5000), 2)
             fmt = random.choice(messy_formats)
+            desc = fmt.format(short_name)
             transactions.append({
-                "transaction_id": _generate_transaction_id(),
+                "transaction_id": _generate_transaction_id(desc, amount, str(txn_date)),
                 "date": str(txn_date),
-                "description": fmt.format(short_name),
+                "description": desc,
                 "amount": amount,
             })
 
@@ -75,10 +78,11 @@ class MockPlaidService:
         for company in unmatched_companies:
             txn_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
             amount = round(random.uniform(500, 3000), 2)
+            desc = f"ACH DEPOSIT {company.upper()}"
             transactions.append({
-                "transaction_id": _generate_transaction_id(),
+                "transaction_id": _generate_transaction_id(desc, amount, str(txn_date)),
                 "date": str(txn_date),
-                "description": f"ACH DEPOSIT {company.upper()}",
+                "description": desc,
                 "amount": amount,
             })
 
@@ -109,11 +113,12 @@ class MockPlaidService:
         ]
         for desc, amt in expenses:
             txn_date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
+            rounded_amt = round(amt, 2)
             transactions.append({
-                "transaction_id": _generate_transaction_id(),
+                "transaction_id": _generate_transaction_id(desc, rounded_amt, str(txn_date)),
                 "date": str(txn_date),
                 "description": desc,
-                "amount": round(amt, 2),
+                "amount": rounded_amt,
             })
 
         random.seed()

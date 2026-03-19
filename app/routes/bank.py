@@ -6,10 +6,12 @@ from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.models.bank import BankConnection, BankTransaction, ConnectionType
+from app.models.carrier import CarrierProfile
 from app.schemas.bank import (
     BankConnectionResponse,
     BankTransactionResponse,
@@ -35,6 +37,12 @@ plaid_service = MockPlaidService()
 @router.post("/bank-connections/plaid/link", response_model=BankConnectionResponse, status_code=201)
 async def plaid_link(data: PlaidLinkRequest, db: AsyncSession = Depends(get_db)):
     """Create a bank connection via (mock) Plaid link flow."""
+    carrier_result = await db.execute(
+        select(CarrierProfile).where(CarrierProfile.id == data.carrier_id)
+    )
+    if not carrier_result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="carrier_id does not exist")
+
     link_data = plaid_service.create_link(data.carrier_id)
 
     connection = BankConnection(
