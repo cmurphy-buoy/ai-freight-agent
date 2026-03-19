@@ -7,6 +7,9 @@ Run the app with: uvicorn app.main:app --reload
 --reload means the server restarts automatically when you change code (great for development).
 """
 
+import os
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -24,8 +27,12 @@ app = FastAPI(
     version="0.1.0",
 )
 
+# Resolve paths relative to this file so it works in both local dev and Vercel
+_BASE_DIR = Path(__file__).resolve().parent
+_STATIC_DIR = _BASE_DIR / "static"
+
 # Mount static files (for the dashboard HTML/CSS/JS later)
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 # Connect route modules to the app
 # Each router handles a group of related endpoints
@@ -40,10 +47,10 @@ app.include_router(bank_router)
 @app.get("/")
 async def root():
     """Serve the main dashboard."""
-    return FileResponse("app/static/dashboard.html")
+    return FileResponse(str(_STATIC_DIR / "dashboard.html"))
 
 
 @app.get("/dashboard")
 async def dashboard():
     """Alias for the dashboard page."""
-    return FileResponse("app/static/dashboard.html")
+    return FileResponse(str(_STATIC_DIR / "dashboard.html"))

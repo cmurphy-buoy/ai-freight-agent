@@ -14,10 +14,14 @@ class Settings(BaseSettings):
     Format: postgresql+asyncpg://username:password@host:port/database_name
     """
 
-    database_url: str = "postgresql+asyncpg://postgres:password@localhost:5432/freight_agent"
+    database_url: str = ""
 
     class Config:
         env_file = ".env"
+
+    @property
+    def has_database(self) -> bool:
+        return bool(self.database_url)
 
 
 # Create one instance the whole app shares
