@@ -398,14 +398,6 @@
                     <input id="current_state" placeholder="e.g. GA" maxlength="2">
                 </div>
                 <div class="form-group">
-                    <label>Current Latitude</label>
-                    <input id="current_lat" type="number" step="0.001" placeholder="e.g. 33.749">
-                </div>
-                <div class="form-group">
-                    <label>Current Longitude</label>
-                    <input id="current_lng" type="number" step="0.001" placeholder="e.g. -84.388">
-                </div>
-                <div class="form-group">
                     <label>Max Deadhead Miles</label>
                     <input id="max_deadhead" type="number" value="150">
                 </div>
@@ -697,10 +689,40 @@
         }
     }
 
+    // ===== CITY COORDINATES LOOKUP =====
+    const CITY_COORDS = {
+        'atlanta_ga': [33.749, -84.388], 'nashville_tn': [36.162, -86.774],
+        'charlotte_nc': [35.227, -80.843], 'dallas_tx': [32.776, -96.797],
+        'jacksonville_fl': [30.332, -81.656], 'memphis_tn': [35.149, -90.049],
+        'savannah_ga': [32.081, -81.091], 'miami_fl': [25.761, -80.192],
+        'houston_tx': [29.760, -95.370], 'birmingham_al': [33.520, -86.802],
+        'tampa_fl': [27.950, -82.457], 'orlando_fl': [28.538, -81.379],
+        'raleigh_nc': [35.780, -78.639], 'richmond_va': [37.541, -77.436],
+        'columbia_sc': [34.000, -81.035], 'charleston_sc': [32.777, -79.931],
+        'knoxville_tn': [35.960, -83.921], 'chattanooga_tn': [35.045, -85.310],
+        'new orleans_la': [29.951, -90.072], 'jackson_ms': [32.299, -90.185],
+        'mobile_al': [30.695, -88.040], 'little rock_ar': [34.746, -92.290],
+        'louisville_ky': [38.253, -85.759], 'san antonio_tx': [29.424, -98.493],
+        'austin_tx': [30.267, -97.743], 'greensboro_nc': [36.073, -79.792],
+        'norfolk_va': [36.851, -76.286], 'pensacola_fl': [30.421, -87.217],
+    };
+
+    function getCityCoords(city, state) {
+        const key = `${city.toLowerCase().trim()}_${state.toLowerCase().trim()}`;
+        return CITY_COORDS[key] || null;
+    }
+
     // ===== TRUCK =====
     async function saveTruck() {
         if (!carrierId) {
             showMsg('truck-msg', 'Save a carrier profile first!', 'error');
+            return;
+        }
+        const city = document.getElementById('current_city').value;
+        const state = document.getElementById('current_state').value.toUpperCase();
+        const coords = getCityCoords(city, state);
+        if (!coords) {
+            showMsg('truck-msg', `City "${city}, ${state}" not recognized. Try a major Southeast US city (Atlanta, Nashville, Charlotte, Dallas, etc.)`, 'error');
             return;
         }
         const data = {
@@ -708,10 +730,10 @@
             name: document.getElementById('truck_name').value,
             equipment_type: document.getElementById('equipment_type').value,
             max_weight_lbs: parseInt(document.getElementById('max_weight').value),
-            current_city: document.getElementById('current_city').value,
-            current_state: document.getElementById('current_state').value.toUpperCase(),
-            current_lat: parseFloat(document.getElementById('current_lat').value),
-            current_lng: parseFloat(document.getElementById('current_lng').value),
+            current_city: city,
+            current_state: state,
+            current_lat: coords[0],
+            current_lng: coords[1],
             max_deadhead_miles: parseInt(document.getElementById('max_deadhead').value),
             min_rate_per_mile: document.getElementById('min_rate').value,
         };
