@@ -10,8 +10,9 @@ KEY CONCEPTS FOR BEGINNERS:
 - AsyncSession: Same thing but non-blocking (the app can do other stuff while waiting)
 """
 
+from __future__ import annotations
+
 from fastapi import HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from app.config import settings
 
 # Create the engine — this is the connection pool to PostgreSQL
@@ -20,6 +21,8 @@ engine = None
 async_session = None
 
 if settings.has_database:
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
     engine = create_async_engine(
         settings.database_url,
         echo=False,  # Set to True if you want to see every SQL query in the terminal (noisy but helpful for debugging)

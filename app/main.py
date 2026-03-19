@@ -32,7 +32,8 @@ _BASE_DIR = Path(__file__).resolve().parent
 _STATIC_DIR = _BASE_DIR / "static"
 
 # Mount static files (for the dashboard HTML/CSS/JS later)
-app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+if _STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
 # Connect route modules to the app
 # Each router handles a group of related endpoints
