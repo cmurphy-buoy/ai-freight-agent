@@ -96,7 +96,7 @@ app/
 ## Development Roadmap
 
 **Phase 1 (COMPLETE):** Load search & scoring MVP — see `prd.json` (US-001 through US-010)
-**Phase 2 (NEXT):** AI Bookkeeper — see `prd-bookkeeper.json` (US-011 through US-020)
+**Phase 2 (COMPLETE):** AI Bookkeeper — see `prd-bookkeeper.json` (US-011 through US-020)
 
 Phase 2 adds:
 - Invoice tracking tied to completed loads (draft → sent → outstanding → paid/overdue/factored)

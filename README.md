@@ -1,105 +1,84 @@
-# 🚛 AI Freight Agent MVP
+# AI Freight Agent
 
-An AI-powered freight agent that helps small trucking carriers find and evaluate loads. Built with Python, FastAPI, and PostgreSQL.
+An AI-powered freight agent for small trucking carriers. Search loads from DAT and Truckstop, score and rank them, book loads, manage invoices, connect bank accounts, and auto-reconcile payments.
+
+**Live Demo:** [relaxed-driscoll.vercel.app](https://relaxed-driscoll.vercel.app)
 
 ## What It Does
 
-1. **Store your carrier profile** — MC#, DOT#, insurance, contact info
-2. **Define your truck** — equipment type, weight limits, location, rate floor
-3. **Save preferred lanes** — routes you like to run (Atlanta → Dallas, etc.)
-4. **Search loads** — finds loads matching your truck from a mock DAT load board
-5. **Score & rank loads** — rates each load 0-100 based on rate, deadhead, and lane match
+### Phase 1: Load Search & Scoring (Complete)
+- Store carrier profile (MC#, DOT#, contact info)
+- Define trucks with equipment type, weight limits, location, rate floor
+- Save preferred lanes (routes you like to run)
+- Search 200 mock loads from DAT and Truckstop load boards
+- Score and rank loads 0-100 based on rate, deadhead distance, and lane match
+- Browse all loads without a truck, filter by equipment type and origin state
+- Book loads directly from search results
+
+### Phase 2: AI Bookkeeper (Complete)
+- Invoice tracking tied to booked loads (draft, sent, outstanding, paid, overdue, factored, disputed)
+- Create invoices manually or auto-generate from booked loads
+- Bank account connection via mock Plaid integration
+- CSV bank statement upload with flexible column matching
+- Auto-reconciliation: matches deposits to invoices by amount + fuzzy broker name
+- Transaction categorization: fuel, tolls, insurance, maintenance, lumper, scale, parking, subscriptions
+- Bookkeeper dashboard with invoice management, bank transactions, and reconciliation panel
+
+### Phase 3+ (Planned)
+- Real DAT API integration (swap MockDATService for RealDATService)
+- Real Truckstop API integration (same swap pattern)
+- Real Plaid API integration (swap MockPlaidService for RealPlaidService)
+- Factoring company APIs (RTS Financial, Triumph, OTR Solutions)
+- Driver dispatch workflow
+- Automated bidding
+- Carrier packet submission
+- Broker communication bot
+- Authentication / multi-user
+- Profit/loss reports
+
+## Tech Stack
+
+- **Python 3.11+** with **FastAPI** (async web framework)
+- **PostgreSQL** via **SQLAlchemy async** + **asyncpg**
+- **Alembic** for database migrations
+- **Pydantic** for input validation
+- Plain HTML + vanilla JS dashboard (no frontend framework)
+- **Vercel** for deployment (serverless Python + Neon PostgreSQL)
 
 ## Quick Start
 
-### 1. Install Python 3.11+
-Download from [python.org](https://python.org) if you don't have it.
+### Local Development
 
-### 2. Install PostgreSQL
-Download from [postgresql.org](https://www.postgresql.org/download/) or use Docker:
 ```bash
-docker run -d --name freight-db -e POSTGRES_PASSWORD=password -p 5432:5432 postgres:16
-```
-
-### 3. Create the database
-```bash
-createdb freight_agent
-# Or if using Docker:
-docker exec -it freight-db psql -U postgres -c "CREATE DATABASE freight_agent;"
-```
-
-### 4. Set up the project
-```bash
-cd freight-agent
-cp .env.example .env          # Then edit .env with your DB password
+# Clone and setup
+git clone https://github.com/cmurphy-buoy/ai-freight-agent.git
+cd ai-freight-agent
+cp .env.example .env          # Edit with your DB credentials
 pip install -r requirements.txt
-alembic upgrade head           # Creates all database tables
-```
 
-### 5. Run it
-```bash
+# Database
+createdb freight_agent
+alembic upgrade head
+
+# Run
 uvicorn app.main:app --reload
+# Open http://localhost:8000
 ```
 
-### 6. Open in your browser
-- **Dashboard:** http://localhost:8000
-- **API Docs:** http://localhost:8000/docs (interactive — you can test every endpoint)
+### Demo Flow
 
-## How to Use
-
-1. Go to the **Setup** tab → fill in your carrier info → Save
-2. Fill in your truck details (use Atlanta: lat 33.749, lng -84.388 for testing) → Save
-3. Go to **Preferred Lanes** tab → add routes you like (e.g., Atlanta,GA → Dallas,TX)
-4. Go to **Search Loads** tab → select your truck → click Search
-5. See loads ranked by score — green (70+) is great, yellow (40-69) is okay, red is meh
-
-## Project Structure
-
-```
-freight-agent/
-├── app/
-│   ├── main.py              ← App entry point, connects everything
-│   ├── config.py             ← Settings (reads .env file)
-│   ├── db/
-│   │   └── database.py       ← Database connection
-│   ├── models/
-│   │   ├── base.py            ← Base class for all models
-│   │   ├── carrier.py         ← CarrierProfile table
-│   │   └── truck.py           ← Truck + PreferredLane tables
-│   ├── routes/
-│   │   ├── health.py          ← GET /health
-│   │   ├── carriers.py        ← Carrier CRUD API
-│   │   ├── trucks.py          ← Truck + Lanes CRUD API
-│   │   └── loads.py           ← Load search endpoint
-│   ├── schemas/
-│   │   ├── __init__.py        ← Carrier schemas (validation)
-│   │   └── trucks.py          ← Truck + Lane schemas
-│   ├── services/
-│   │   ├── geo.py             ← Haversine distance formula
-│   │   ├── mock_dat.py        ← Fake DAT load board (65 loads)
-│   │   └── scoring.py         ← Load scoring algorithm (0-100)
-│   └── static/
-│       └── dashboard.html     ← The web dashboard
-├── migrations/                ← Alembic DB migrations
-├── alembic.ini
-├── requirements.txt
-└── prd.json                   ← Ralph stories for future development
-```
-
-## Next Steps (Phase 2)
-
-When you're ready to expand, the `prd.json` can be extended with:
-- **Real DAT API** — swap `MockDATService` for a real one (same interface)
-- **Automated bidding** — submit bids via email or API
-- **Carrier packet submission** — auto-send W-9/insurance to new brokers
-- **Broker communication** — AI-drafted emails for check calls
-- **Multi-user auth** — login system for multiple dispatchers
+1. **Setup tab** - Save a carrier profile, add trucks (use Atlanta, Nashville, Charlotte, or Dallas)
+2. **Search Loads** - Browse 200 loads from DAT + Truckstop, filter by type/state
+3. **Book** a load - Click "Book" to create a draft invoice
+4. **Bookkeeper tab** - See invoices, connect mock bank, sync transactions
+5. **Reconcile** - Click "Reconcile Now" to auto-match deposits to invoices
+6. **Categorize** - Click "Categorize All" to tag expenses (fuel, tolls, etc.)
 
 ## API Endpoints
 
+### Carrier & Truck Management
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | /health | Health check |
 | POST | /api/carriers | Create carrier profile |
 | GET | /api/carriers/{id} | Get carrier profile |
 | PUT | /api/carriers/{id} | Update carrier profile |
@@ -110,4 +89,43 @@ When you're ready to expand, the `prd.json` can be extended with:
 | POST | /api/trucks/{id}/lanes | Add preferred lane |
 | GET | /api/trucks/{id}/lanes | List lanes for truck |
 | DELETE | /api/trucks/{id}/lanes/{lid} | Remove a lane |
-| GET | /api/loads/search?truck_id={id} | Search & score loads |
+
+### Load Search
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/loads/search?truck_id={id} | Search and score loads for a truck |
+| GET | /api/loads/browse | Browse all loads (no truck required) |
+
+### Invoices
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/invoices | Create invoice |
+| POST | /api/invoices/from-load | Create invoice from booked load |
+| GET | /api/invoices/{id} | Get invoice |
+| PUT | /api/invoices/{id} | Update invoice (status, payment) |
+| GET | /api/invoices?carrier_id={id} | List invoices (optional status filter) |
+
+### Bank and Transactions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/bank-connections/plaid/link | Connect bank via mock Plaid |
+| GET | /api/bank-connections?carrier_id={id} | List bank connections |
+| DELETE | /api/bank-connections/{id} | Disconnect bank |
+| POST | /api/bank-connections/{id}/sync | Sync transactions |
+| POST | /api/bank-connections/upload | Upload CSV statement |
+| GET | /api/transactions?bank_connection_id={id} | List transactions |
+| POST | /api/reconcile?carrier_id={id} | Run auto-reconciliation |
+| POST | /api/transactions/categorize?bank_connection_id={id} | Categorize expenses |
+
+## Scoring Formula (0-100 points)
+
+- **Rate per mile**: 0-40 pts (linear scale, $1.00 above min_rate = max)
+- **Deadhead miles**: 0-30 pts (closer to truck = more points)
+- **Preferred lane match**: 0-30 pts (full match = priority_weight/10 * 30)
+
+## Architecture
+
+- **Mock-first design**: MockDATService, MockTruckstopService, and MockPlaidService follow the same interfaces their real API adapters would use. Swap one file to go live.
+- **Service layer pattern**: Routes call services, services call data layer. No business logic in routes.
+- **Multi-board aggregation**: Search merges results from DAT and Truckstop, scores them identically.
+- **Fuzzy reconciliation**: Strips common suffixes (Logistics, Inc, LLC, etc.) for broker name matching.
