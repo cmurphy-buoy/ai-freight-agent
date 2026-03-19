@@ -13,7 +13,9 @@ STRIP_SUFFIXES = re.compile(
 )
 
 
-def _normalize_name(name: str) -> str:
+def _normalize_name(name: str | None) -> str:
+    if not name:
+        return ""
     name = name.lower().strip()
     name = STRIP_SUFFIXES.sub("", name)
     name = re.sub(r"\s+", " ", name).strip()
@@ -84,9 +86,11 @@ class ReconciliationService:
                 if abs(float(inv.amount) - deposit_amount) > 0.50:
                     continue
 
-                # Name/MC check
+                # Name/MC check (guard against empty strings — "" in s is always True)
                 normalized_broker = _normalize_name(inv.broker_name)
-                if normalized_broker in desc_lower or inv.broker_mc in desc_lower:
+                name_match = bool(normalized_broker) and normalized_broker in desc_lower
+                mc_match = bool(inv.broker_mc) and inv.broker_mc in desc_lower
+                if name_match or mc_match:
                     candidates.append(inv)
 
             if len(candidates) == 1:

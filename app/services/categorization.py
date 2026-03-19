@@ -4,17 +4,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.bank import BankTransaction
 
 CATEGORY_KEYWORDS: dict[str, list[str]] = {
-    "fuel": ["pilot", "loves", "ta petro", "flying j", "fuel", "diesel", "gas"],
+    "fuel": ["pilot", "loves", "ta petro", "flying j", "fuel", "diesel", "gas", "speedway"],
     "tolls": ["ez pass", "ezpass", "toll", "pike", "turnpike", "ipass"],
     "insurance": ["insurance", "progressive", "national interstate", "great west"],
-    "maintenance": [
-        "repair", "tire", "service", "mechanic", "parts", "shop",
-        "freightliner", "peterbilt", "kenworth",
-    ],
     "lumper": ["lumper", "unload"],
     "scale": ["cat scale", "scale"],
     "parking": ["truck stop", "parking", "truckpark"],
     "subscription": ["eld", "samsara", "keeptruckin", "motive", "project44"],
+    "truck_wash": ["truck wash", "blue beacon"],
+    "maintenance": [
+        "repair", "tire", "mechanic", "parts", "shop", "service ctr", "dealer svc",
+        "freightliner", "peterbilt", "kenworth", "discount tire",
+    ],
 }
 
 
