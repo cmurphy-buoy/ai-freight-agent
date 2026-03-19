@@ -1,0 +1,193 @@
+{
+  "project": "FreightAgent",
+  "branchName": "ralph/ai-bookkeeper",
+  "description": "AI Bookkeeper - Invoice tracking, bank reconciliation, and transaction categorization for trucking carriers",
+  "userStories": [
+    {
+      "id": "US-011",
+      "title": "Invoice database model and CRUD API",
+      "description": "As a carrier, I want to create and track invoices for loads so I know who owes me money and when payment is due.",
+      "acceptanceCriteria": [
+        "Invoice model with fields: id, carrier_id (FK to carrier_profiles), load_reference (string), broker_name, broker_mc, origin_city, origin_state, destination_city, destination_state, amount (decimal), rate_per_mile (decimal), miles (int), invoice_date (date), due_date (date), status (enum: draft, sent, outstanding, paid, overdue, factored, disputed), factoring_company (string nullable), payment_date (date nullable), payment_reference (string nullable), notes (text nullable), created_at, updated_at",
+        "Alembic migration creates invoices table with FK to carrier_profiles",
+        "POST /api/invoices creates an invoice and returns it",
+        "GET /api/invoices/{id} retrieves an invoice",
+        "PUT /api/invoices/{id} updates an invoice",
+        "GET /api/invoices?carrier_id={id} lists all invoices for a carrier",
+        "GET /api/invoices?carrier_id={id}&status=outstanding filters by status",
+        "Returns 404 for non-existent invoice IDs",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Depends on existing carrier_profiles table from Phase 1. InvoiceStatus enum: draft, sent, outstanding, paid, overdue, factored, disputed."
+    },
+    {
+      "id": "US-012",
+      "title": "Invoice creation from load search results",
+      "description": "As a carrier, I want to create an invoice directly from a load's details so I don't re-enter data manually.",
+      "acceptanceCriteria": [
+        "POST /api/invoices/from-load endpoint accepts: carrier_id, broker_name, broker_mc, origin_city, origin_state, destination_city, destination_state, rate_total, rate_per_mile, miles, load_reference (optional)",
+        "Auto-sets invoice_date to today",
+        "Auto-sets due_date to 30 days from today (broker net-30)",
+        "Auto-sets status to draft",
+        "Auto-sets amount to rate_total from the load",
+        "Returns the created invoice",
+        "Returns 400 if carrier_id does not exist",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-011. This is a convenience endpoint — same Invoice model, just auto-populates fields from load data."
+    },
+    {
+      "id": "US-013",
+      "title": "Bank connection model and mock Plaid link",
+      "description": "As a carrier, I want to connect my business bank account so the system can pull transactions automatically.",
+      "acceptanceCriteria": [
+        "BankConnection model with fields: id, carrier_id (FK), institution_name (string), account_name (string), account_mask (string last 4 digits), connection_type (enum: plaid, manual), plaid_access_token (string nullable), plaid_item_id (string nullable), is_active (bool default true), last_synced_at (datetime nullable), created_at, updated_at",
+        "Alembic migration creates bank_connections table with FK to carrier_profiles",
+        "MockPlaidService class in app/services/mock_plaid.py",
+        "MockPlaidService.create_link() returns fake access_token, item_id, institution_name, account_name, account_mask",
+        "POST /api/bank-connections/plaid/link accepts carrier_id and calls MockPlaidService.create_link()",
+        "GET /api/bank-connections?carrier_id={id} lists connected accounts",
+        "DELETE /api/bank-connections/{id} sets is_active=false (soft delete)",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "MockPlaidService follows same interface a real Plaid adapter would use. Same swap pattern as MockDATService."
+    },
+    {
+      "id": "US-014",
+      "title": "Bank transaction model and mock sync endpoint",
+      "description": "As a developer, I need to store bank transactions so the reconciliation engine has data to work with.",
+      "acceptanceCriteria": [
+        "BankTransaction model with fields: id, bank_connection_id (FK), transaction_id (string unique), date (date), description (string), amount (decimal positive=deposit negative=debit), category (string nullable), is_deposit (bool), is_reconciled (bool default false), matched_invoice_id (FK to invoices nullable), raw_data (JSON nullable), created_at",
+        "Alembic migration creates bank_transactions table with FKs",
+        "MockPlaidService.get_transactions(access_token, start_date, end_date) returns 30+ realistic transactions",
+        "Mock transactions include mix of: broker payment deposits ($500-$5000), fuel charges (-$200 to -$800), toll charges (-$5 to -$50), insurance debits, maintenance, lumper fees",
+        "POST /api/bank-connections/{id}/sync calls MockPlaidService.get_transactions() and stores results",
+        "Deduplication: skips transactions where transaction_id already exists in DB",
+        "GET /api/transactions?bank_connection_id={id} lists transactions",
+        "GET /api/transactions?bank_connection_id={id}&is_reconciled=false lists unreconciled only",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-013 for bank_connections table. Mock transactions should reference some broker names from MockDATService so reconciliation has matches to find."
+    },
+    {
+      "id": "US-015",
+      "title": "Manual CSV bank statement upload",
+      "description": "As a carrier, I want to upload a CSV bank statement as a fallback if I can't connect via Plaid.",
+      "acceptanceCriteria": [
+        "POST /api/bank-connections/upload accepts a CSV file and carrier_id",
+        "Creates a BankConnection with connection_type=manual and institution_name=Manual Upload if one doesn't exist for this carrier",
+        "Parses CSV with flexible column matching: date column (Date, DATE, Transaction Date, Posted Date), description column (Description, Memo, Details, Transaction), amount column (Amount, AMOUNT, Debit/Credit as separate or combined)",
+        "Handles both single-amount format (negative=debit, positive=credit) and separate debit/credit columns",
+        "Creates BankTransaction records for each valid row",
+        "Skips duplicates matched by (date + description + amount) combo",
+        "Returns JSON: {imported: count, skipped: count, total_rows: count}",
+        "Returns 400 with message if CSV format is unrecognizable (no matching columns found)",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Depends on US-014 for BankTransaction model. Use Python csv module with Sniffer for delimiter detection. No pandas."
+    },
+    {
+      "id": "US-016",
+      "title": "Auto-reconciliation engine",
+      "description": "As a carrier, I want the system to auto-match bank deposits to outstanding invoices so I know who has paid.",
+      "acceptanceCriteria": [
+        "ReconciliationService class in app/services/reconciliation.py",
+        "POST /api/reconcile?carrier_id={id} triggers reconciliation across all active bank connections",
+        "Match logic: deposit matches invoice if amount within $0.50 tolerance AND deposit description contains broker_name or broker_mc",
+        "Broker name fuzzy matching: lowercase and strip common suffixes (logistics, freight, inc, llc, corp, co, transportation, trucking, brokerage, services, group)",
+        "When matched: invoice status set to paid, invoice payment_date set to transaction date, transaction is_reconciled=true, transaction matched_invoice_id set",
+        "When multiple invoices could match same deposit: skip auto-match and include in needs_review list",
+        "Returns JSON: {matched_count: int, unmatched_deposits: [{date, description, amount}], newly_paid_invoices: [{id, broker_name, amount}], needs_review: [{deposit, possible_invoices}]}",
+        "Only processes unreconciled deposits and outstanding/sent/overdue invoices",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-011 (invoices) and US-014 (transactions). This is the core intelligence of the bookkeeper."
+    },
+    {
+      "id": "US-017",
+      "title": "AI transaction categorization service",
+      "description": "As a carrier, I want non-invoice transactions auto-categorized so my books are clean without manual tagging.",
+      "acceptanceCriteria": [
+        "TransactionCategorizationService class in app/services/categorization.py",
+        "POST /api/transactions/categorize?bank_connection_id={id} triggers categorization of uncategorized transactions",
+        "Keyword-to-category rules: fuel (pilot, loves, ta petro, flying j, fuel, diesel, gas), tolls (ez pass, ezpass, toll, pike, turnpike, ipass), insurance (insurance, progressive, national interstate, great west), maintenance (repair, tire, service, mechanic, parts, shop, freightliner, peterbilt, kenworth), lumper (lumper, unload), scale (cat scale, scale), parking (truck stop, parking, truckpark), subscription (eld, samsara, keeptruckin, motive, project44), broker_payment (already reconciled transactions), other (default)",
+        "Case-insensitive matching on transaction description",
+        "Does not overwrite existing categories (only categorizes where category is null)",
+        "Returns JSON: {categorized_count: int, by_category: {fuel: 5, tolls: 3, ...}}",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Depends on US-014 for transactions. Pure keyword rules for MVP — can add LLM categorization in a future phase."
+    },
+    {
+      "id": "US-018",
+      "title": "Bookkeeper dashboard — invoice management page",
+      "description": "As a carrier, I want a page to view, create, and manage all my invoices with status indicators.",
+      "acceptanceCriteria": [
+        "New Bookkeeper tab added to dashboard navigation in dashboard.html",
+        "Invoice list table columns: Invoice #, Broker, Route, Amount, Rate/Mi, Invoice Date, Due Date, Status, Actions",
+        "Status badges: draft (gray), sent (blue), outstanding (yellow), paid (green), overdue (red), factored (purple), disputed (orange)",
+        "Create Invoice form: broker name, broker MC, origin city/state, destination city/state, amount, rate/mile, miles, due date",
+        "Mark as Sent and Mark as Paid quick-action buttons on each row via PUT /api/invoices/{id}",
+        "Filter dropdown: All, Outstanding, Overdue, Paid, Draft",
+        "Stats row: Total Outstanding ($), Total Overdue ($), Paid This Month ($), Invoice Count",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Depends on US-011 and US-012 APIs. Extends existing dashboard.html with a new tab."
+    },
+    {
+      "id": "US-019",
+      "title": "Bookkeeper dashboard — bank and transactions page",
+      "description": "As a carrier, I want to see my bank transactions and connect/upload from the dashboard.",
+      "acceptanceCriteria": [
+        "Bank sub-section within the Bookkeeper tab",
+        "Connect Bank (Plaid) button calls POST /api/bank-connections/plaid/link (mock: immediately creates test connection)",
+        "Upload Statement (CSV) button with file input calls POST /api/bank-connections/upload",
+        "Connected accounts list: institution name, account last 4, last synced datetime, Sync Now button",
+        "Transaction table: Date, Description, Amount (green text for deposits, red for debits), Category badge, Reconciled checkmark, Matched Invoice link",
+        "Filter: All, Deposits Only, Unreconciled Only, category dropdown",
+        "Sync Now button calls POST /api/bank-connections/{id}/sync",
+        "Categorize All button calls POST /api/transactions/categorize",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Depends on US-013, US-014, US-015, US-017 APIs. Extends the Bookkeeper tab."
+    },
+    {
+      "id": "US-020",
+      "title": "Bookkeeper dashboard — reconciliation panel",
+      "description": "As a carrier, I want a one-click reconcile button that matches deposits to invoices and shows results.",
+      "acceptanceCriteria": [
+        "Reconcile Now button in the Bookkeeper tab calls POST /api/reconcile?carrier_id={id}",
+        "Results panel shows: matched count, list of newly paid invoices (broker + amount), list of unmatched deposits",
+        "Needs Review section shows deposits with multiple possible invoice matches",
+        "Each unmatched deposit has a dropdown to manually assign to an outstanding invoice",
+        "Manual assignment calls PUT /api/invoices/{id} with status=paid and payment_date and then marks transaction as reconciled",
+        "After reconciliation both invoice list and transaction list refresh to show updated statuses",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Depends on US-016 (reconciliation service) and US-018/US-019 (dashboard pages exist). This is the capstone story."
+    }
+  ]
+}

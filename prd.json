@@ -1,0 +1,182 @@
+{
+  "project": "FreightAgent",
+  "branchName": "ralph/freight-agent-mvp",
+  "description": "AI Freight Agent MVP - Search and score loads from mock DAT data based on carrier truck parameters",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Project scaffolding and database setup",
+      "description": "As a developer, I need the FastAPI project structure and PostgreSQL database connection so all other stories have a foundation.",
+      "acceptanceCriteria": [
+        "FastAPI project with folder structure: app/, app/models/, app/routes/, app/services/, app/db/",
+        "PostgreSQL connection via SQLAlchemy async with database.py in app/db/",
+        "Alembic configured for migrations with alembic.ini and migrations/ folder",
+        "GET /health endpoint returns {\"status\": \"ok\"}",
+        "requirements.txt includes fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic, pydantic",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation story — everything depends on this. Use Python 3.11+, async SQLAlchemy."
+    },
+    {
+      "id": "US-002",
+      "title": "Carrier profile model and CRUD API",
+      "description": "As a carrier, I want to store my company info (MC#, DOT#, insurance, contact) so the system knows who I am.",
+      "acceptanceCriteria": [
+        "CarrierProfile model with fields: id, company_name, mc_number, dot_number, insurance_provider, insurance_policy_number, insurance_expiry (date), contact_name, contact_email, contact_phone, created_at, updated_at",
+        "Alembic migration creates carrier_profiles table",
+        "POST /api/carriers creates a carrier profile and returns it",
+        "GET /api/carriers/{id} retrieves a carrier profile",
+        "PUT /api/carriers/{id} updates a carrier profile",
+        "Validation: mc_number must be 6 digits, dot_number must be 7-8 digits",
+        "Returns 404 for non-existent carrier IDs",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Depends on US-001 for project structure and DB connection."
+    },
+    {
+      "id": "US-003",
+      "title": "Truck model and CRUD API",
+      "description": "As a carrier, I want to define my truck capabilities and preferences so the system filters loads I can actually haul.",
+      "acceptanceCriteria": [
+        "Truck model with fields: id, carrier_id (FK to carrier_profiles), name, equipment_type (enum: dry_van, reefer, flatbed, step_deck, power_only), max_weight_lbs (int), current_city, current_state, current_lat (float), current_lng (float), max_deadhead_miles (int), min_rate_per_mile (decimal), created_at, updated_at",
+        "Alembic migration creates trucks table with foreign key to carrier_profiles",
+        "POST /api/trucks creates a truck (requires valid carrier_id)",
+        "GET /api/trucks/{id} retrieves a truck",
+        "PUT /api/trucks/{id} updates a truck",
+        "GET /api/trucks?carrier_id={id} lists all trucks for a carrier",
+        "Returns 400 if carrier_id does not exist",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Depends on US-002 for carrier_profiles table."
+    },
+    {
+      "id": "US-004",
+      "title": "Preferred lanes model and API",
+      "description": "As a carrier, I want to save preferred lanes so the system prioritizes loads on routes I like to run.",
+      "acceptanceCriteria": [
+        "PreferredLane model with fields: id, truck_id (FK to trucks), origin_city, origin_state, destination_city, destination_state, priority_weight (int 1-10 default 5), created_at",
+        "Alembic migration creates preferred_lanes table with FK to trucks",
+        "POST /api/trucks/{truck_id}/lanes adds a preferred lane",
+        "GET /api/trucks/{truck_id}/lanes lists lanes for a truck",
+        "DELETE /api/trucks/{truck_id}/lanes/{lane_id} removes a lane",
+        "Returns 404 if truck_id does not exist",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Depends on US-003 for trucks table."
+    },
+    {
+      "id": "US-005",
+      "title": "Mock DAT load data service",
+      "description": "As a developer, I need a mock data layer returning realistic loads so I can test search and scoring without a real API.",
+      "acceptanceCriteria": [
+        "MockDATService class in app/services/mock_dat.py",
+        "Generates 50+ mock loads with fields: load_id, origin_city, origin_state, origin_lat, origin_lng, destination_city, destination_state, dest_lat, dest_lng, equipment_type, weight_lbs, rate_total, rate_per_mile, miles, pickup_date, delivery_date, broker_name, broker_mc",
+        "Loads cover all 5 equipment types with Southeast US focus",
+        "Rate range is $1.50-$4.00 per mile",
+        "search_loads(equipment_type, origin_lat, origin_lng, radius_miles) method filters by equipment type and uses Haversine formula to filter by distance from origin",
+        "Haversine distance calculation in a utility function app/services/geo.py",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "No DB dependency. Uses same interface a real DAT adapter would so it can be swapped later."
+    },
+    {
+      "id": "US-006",
+      "title": "Load search and filter endpoint",
+      "description": "As a carrier, I want to search for loads matching my truck so I only see what I can haul near me.",
+      "acceptanceCriteria": [
+        "GET /api/loads/search?truck_id={id} endpoint",
+        "Reads truck equipment_type, current_lat, current_lng, max_deadhead_miles, max_weight_lbs from DB",
+        "Calls MockDATService.search_loads() with truck parameters",
+        "Filters out loads where weight_lbs exceeds truck max_weight_lbs",
+        "Each result includes all load fields plus deadhead_miles (distance from truck to pickup)",
+        "Returns 404 if truck_id does not exist",
+        "Returns empty list with 200 if no loads match",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-003 (truck data) and US-005 (mock loads)."
+    },
+    {
+      "id": "US-007",
+      "title": "Load scoring and ranking service",
+      "description": "As a carrier, I want loads ranked by a score so the best ones for me appear first.",
+      "acceptanceCriteria": [
+        "LoadScoringService class in app/services/scoring.py",
+        "Score formula: rate_per_mile_score (0-40 pts, higher rate = more pts), deadhead_score (0-30 pts, lower deadhead = more pts), lane_match_score (0-30 pts, bonus if origin+dest match a preferred lane, scaled by priority_weight)",
+        "Total score is 0-100",
+        "GET /api/loads/search?truck_id={id} now returns results sorted by score descending",
+        "Each result includes score (int) and score_breakdown object with rate_points, deadhead_points, lane_points",
+        "Loads below truck min_rate_per_mile are excluded from results",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Depends on US-004 (preferred lanes) and US-006 (search endpoint)."
+    },
+    {
+      "id": "US-008",
+      "title": "Web dashboard - carrier and truck setup page",
+      "description": "As a carrier, I want a web page to enter my company info and truck details instead of using raw API calls.",
+      "acceptanceCriteria": [
+        "HTML page served at GET / with Carrier Profile form and Truck Setup form",
+        "Carrier form: company_name, mc_number, dot_number, contact_name, contact_email, contact_phone",
+        "Truck form: name, equipment_type (dropdown with 5 options), max_weight_lbs, current_city, current_state, max_deadhead_miles, min_rate_per_mile",
+        "Forms submit via JavaScript fetch() to POST /api/carriers and POST /api/trucks",
+        "Success and error messages display on page without reload",
+        "Clean simple CSS styling — no framework needed",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Depends on US-002 and US-003 APIs being working. Static HTML served by FastAPI."
+    },
+    {
+      "id": "US-009",
+      "title": "Web dashboard - load search results page",
+      "description": "As a carrier, I want to see scored load results in a table so I can quickly find the best loads.",
+      "acceptanceCriteria": [
+        "HTML page served at GET /dashboard",
+        "Dropdown to select a truck (populated from GET /api/trucks?carrier_id=1)",
+        "Search Loads button calls GET /api/loads/search?truck_id={id}",
+        "Results table columns: Score, Origin, Destination, Miles, Rate/Mile, Total Rate, Deadhead, Equipment, Pickup Date, Broker",
+        "Table sorted by score descending",
+        "Score column color coded: green (70+), yellow (40-69), red (below 40)",
+        "Shows empty state message when no loads match",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "Depends on US-007 (scoring) and US-008 (setup page creates test data)."
+    },
+    {
+      "id": "US-010",
+      "title": "Web dashboard - preferred lanes management",
+      "description": "As a carrier, I want to add and remove preferred lanes from the dashboard to influence load scoring.",
+      "acceptanceCriteria": [
+        "Section on /dashboard page below the search results for managing preferred lanes",
+        "Add lane form: origin_city, origin_state, destination_city, destination_state, priority_weight (range slider 1-10)",
+        "Displays list of existing lanes for selected truck with delete button on each",
+        "Adding or removing a lane works via fetch() to the lanes API without page reload",
+        "After adding/removing a lane, re-searching shows updated scores",
+        "Typecheck passes",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "Depends on US-004 (lanes API) and US-009 (dashboard page exists)."
+    }
+  ]
+}
