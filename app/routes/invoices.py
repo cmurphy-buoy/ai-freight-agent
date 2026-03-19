@@ -10,6 +10,7 @@ from app.models.invoice import Invoice, InvoiceStatus
 from app.schemas.invoices import (
     InvoiceCreate, InvoiceFromLoadCreate, InvoiceUpdate, InvoiceResponse,
 )
+from app.services.factoring import MockFactoringService
 
 router = APIRouter(prefix="/api/invoices", tags=["invoices"])
 
@@ -29,6 +30,12 @@ async def create_invoice(data: InvoiceCreate, db: AsyncSession = Depends(get_db)
     await db.commit()
     await db.refresh(invoice)
     return invoice
+
+
+@router.get("/factoring-companies")
+async def list_factoring_companies():
+    service = MockFactoringService()
+    return service.get_companies()
 
 
 @router.post("/from-load", response_model=InvoiceResponse, status_code=201)
@@ -94,3 +101,34 @@ async def list_invoices(
         query = query.where(Invoice.status == status)
     result = await db.execute(query)
     return result.scalars().all()
+
+
+@router.post("/{invoice_id}/factor", response_model=InvoiceResponse)
+async def factor_invoice(
+    invoice_id: int,
+    company: str = Query(..., description="Factoring company key: rts, triumph, otr"),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(Invoice).where(Invoice.id == invoice_id))
+    invoice = result.scalar_one_or_none()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    if invoice.status == InvoiceStatus.paid:
+        raise HTTPException(status_code=400, detail="Invoice already paid")
+    if invoice.status == InvoiceStatus.factored:
+        raise HTTPException(status_code=400, detail="Invoice already factored")
+
+    factoring = MockFactoringService()
+    try:
+        result_data = factoring.submit_invoice(company, float(invoice.amount))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    invoice.status = InvoiceStatus.factored
+    invoice.factoring_company = result_data["factoring_company"]
+    invoice.payment_reference = result_data["confirmation_number"]
+
+    await db.commit()
+    await db.refresh(invoice)
+    return invoice

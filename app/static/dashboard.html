@@ -251,6 +251,14 @@
         .badge-overdue { background: #450a0a; color: #f87171; }
         .badge-factored { background: #3b0764; color: #c084fc; }
         .badge-disputed { background: #431407; color: #fb923c; }
+        .badge-assigned { background: #1e3a5f; color: #60a5fa; }
+        .badge-en_route_pickup { background: #422006; color: #fbbf24; }
+        .badge-at_pickup { background: #422006; color: #fbbf24; }
+        .badge-loaded { background: #3b0764; color: #c084fc; }
+        .badge-en_route_delivery { background: #422006; color: #fbbf24; }
+        .badge-at_delivery { background: #422006; color: #fbbf24; }
+        .badge-delivered { background: #064e3b; color: #34d399; }
+        .badge-cancelled { background: #450a0a; color: #f87171; }
 
         /* Amount colors */
         .amount-positive { color: #34d399; }
@@ -635,6 +643,24 @@
             </div>
         </div>
 
+        <!-- Dispatch Panel -->
+        <div class="card">
+            <div class="section-header">
+                <h2>Dispatches</h2>
+                <select id="dispatch-filter" onchange="loadDispatches()" style="width:auto">
+                    <option value="">All</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="en_route_pickup">En Route to Pickup</option>
+                    <option value="loaded">Loaded</option>
+                    <option value="en_route_delivery">En Route to Delivery</option>
+                    <option value="delivered">Delivered</option>
+                </select>
+            </div>
+            <div id="dispatch-table-container">
+                <div class="empty-state"><p>Book and dispatch loads to track them here.</p></div>
+            </div>
+        </div>
+
         <!-- Bank & Transactions -->
         <div class="card">
             <div class="section-header">
@@ -704,6 +730,7 @@
                 return;
             }
             loadInvoices();
+            loadDispatches();
             loadBankConnections();
         }
     }
@@ -983,6 +1010,22 @@
             });
             if (resp.ok) {
                 const inv = await resp.json();
+                const driverName = prompt('Enter driver name for dispatch (or Cancel to skip):');
+                if (driverName) {
+                    const truckId = trucks.length > 0 ? trucks[0].id : null;
+                    if (truckId) {
+                        await fetch(`${API}/api/dispatches`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({
+                                invoice_id: inv.id,
+                                truck_id: truckId,
+                                carrier_id: carrierId,
+                                driver_name: driverName,
+                            }),
+                        });
+                    }
+                }
                 alert(`Booked! Invoice #${inv.id} created for ${load.broker_name} — $${load.rate_total.toFixed(2)}`);
                 switchTab('bookkeeper');
             } else {
@@ -1131,6 +1174,7 @@
                     actions = `<button class="btn-sm btn-sm-blue" onclick="markInvoiceAs(${inv.id},'sent')">Mark Sent</button>`;
                 } else if (['outstanding','sent','overdue'].includes(inv.status)) {
                     actions = `<button class="btn-sm btn-sm-green" onclick="markInvoiceAs(${inv.id},'paid')">Mark Paid</button>`;
+                    actions += ` <button class="btn-sm btn-sm-blue" onclick="factorInvoice(${inv.id})" style="margin-left:4px">Factor</button>`;
                 }
 
                 html += `<tr>
@@ -1210,6 +1254,99 @@
         } catch (e) {
             console.error('Failed to update invoice:', e);
             alert('Network error updating invoice.');
+        }
+    }
+
+    // ===== DISPATCHES =====
+    async function loadDispatches() {
+        if (!carrierId) return;
+        const filter = document.getElementById('dispatch-filter')?.value || '';
+        let url = `${API}/api/dispatches?carrier_id=${carrierId}`;
+        if (filter) url += `&status=${filter}`;
+
+        try {
+            const resp = await fetch(url);
+            if (!resp.ok) return;
+            const dispatches = await resp.json();
+
+            if (dispatches.length === 0) {
+                document.getElementById('dispatch-table-container').innerHTML = '<div class="empty-state"><p>No dispatches match your filter.</p></div>';
+                return;
+            }
+
+            let html = `<div style="overflow-x:auto"><table class="results-table">
+                <thead><tr><th>#</th><th>Invoice</th><th>Driver</th><th>Status</th><th>Assigned</th><th>Actions</th></tr></thead><tbody>`;
+
+            dispatches.forEach(d => {
+                const statusClass = `badge-${d.status}`;
+                const statusLabel = d.status.replace(/_/g, ' ');
+                const assigned = new Date(d.assigned_at).toLocaleDateString();
+
+                let nextAction = '';
+                const transitions = {
+                    'assigned': ['en_route_pickup', 'En Route'],
+                    'en_route_pickup': ['at_pickup', 'At Pickup'],
+                    'at_pickup': ['loaded', 'Loaded'],
+                    'loaded': ['en_route_delivery', 'Rolling'],
+                    'en_route_delivery': ['at_delivery', 'At Delivery'],
+                    'at_delivery': ['delivered', 'Delivered'],
+                };
+                if (transitions[d.status]) {
+                    const [nextStatus, label] = transitions[d.status];
+                    nextAction = `<button class="btn-sm btn-sm-blue" onclick="updateDispatchStatus(${d.id},'${nextStatus}')">${escapeHtml(label)}</button>`;
+                }
+
+                html += `<tr>
+                    <td>${d.id}</td>
+                    <td>#${d.invoice_id}</td>
+                    <td>${escapeHtml(d.driver_name)}</td>
+                    <td><span class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</span></td>
+                    <td>${assigned}</td>
+                    <td>${nextAction}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('dispatch-table-container').innerHTML = html;
+        } catch (e) {
+            console.error('Failed to load dispatches:', e);
+        }
+    }
+
+    async function updateDispatchStatus(dispatchId, newStatus) {
+        try {
+            const resp = await fetch(`${API}/api/dispatches/${dispatchId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: newStatus}),
+            });
+            if (resp.ok) {
+                loadDispatches();
+                loadInvoices();
+            }
+        } catch (e) {
+            console.error('Failed to update dispatch:', e);
+        }
+    }
+
+    // ===== FACTORING =====
+    async function factorInvoice(invoiceId) {
+        const company = prompt('Choose factoring company:\n1. RTS Financial (97% advance, 3% fee)\n2. Triumph Pay (95% advance, 5% fee)\n3. OTR Solutions (96% advance, 4% fee)\n\nEnter 1, 2, or 3:');
+        const keys = {'1': 'rts', '2': 'triumph', '3': 'otr'};
+        const key = keys[company];
+        if (!key) return;
+
+        try {
+            const resp = await fetch(`${API}/api/invoices/${invoiceId}/factor?company=${key}`, {method: 'POST'});
+            if (resp.ok) {
+                const inv = await resp.json();
+                alert(`Invoice factored with ${inv.factoring_company}. Confirmation: ${inv.payment_reference}`);
+                loadInvoices();
+            } else {
+                const err = await resp.json();
+                alert(`Error: ${err.detail}`);
+            }
+        } catch (e) {
+            alert(`Network error: ${e.message}`);
         }
     }
 
