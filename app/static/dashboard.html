@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Freight Agent</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            line-height: 1.5;
+        }
+
+        .header {
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .header h1 { font-size: 20px; color: #f8fafc; }
+        .header .badge {
+            background: #059669;
+            color: white;
+            font-size: 11px;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-weight: 600;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+        /* Tab navigation */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid #334155;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: #94a3b8;
+            font-size: 14px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+        }
+        .tab:hover { color: #e2e8f0; }
+        .tab.active {
+            color: #38bdf8;
+            border-bottom-color: #38bdf8;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* Cards */
+        .card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            font-size: 16px;
+            color: #f8fafc;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #334155;
+        }
+
+        /* Forms */
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .form-group { display: flex; flex-direction: column; gap: 4px; }
+        .form-group.full-width { grid-column: 1 / -1; }
+        
+        label {
+            font-size: 12px;
+            color: #94a3b8;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input, select {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-primary:hover { background: #1d4ed8; }
+        .btn-success { background: #059669; color: white; }
+        .btn-success:hover { background: #047857; }
+        .btn-danger { background: #dc2626; color: white; font-size: 12px; padding: 4px 10px; }
+        .btn-danger:hover { background: #b91c1c; }
+
+        /* Messages */
+        .msg {
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 13px;
+            display: none;
+        }
+        .msg.success { display: block; background: #064e3b; color: #6ee7b7; border: 1px solid #059669; }
+        .msg.error { display: block; background: #450a0a; color: #fca5a5; border: 1px solid #dc2626; }
+
+        /* Search bar */
+        .search-bar {
+            display: flex;
+            gap: 12px;
+            align-items: end;
+            margin-bottom: 20px;
+        }
+        .search-bar .form-group { flex: 1; }
+
+        /* Results table */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .results-table th {
+            text-align: left;
+            padding: 8px 10px;
+            color: #94a3b8;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid #334155;
+        }
+        .results-table td {
+            padding: 10px;
+            border-bottom: 1px solid #1e293b;
+        }
+        .results-table tr:hover { background: #1e293b; }
+
+        /* Score badges */
+        .score-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 13px;
+            min-width: 40px;
+            text-align: center;
+        }
+        .score-green { background: #064e3b; color: #34d399; }
+        .score-yellow { background: #422006; color: #fbbf24; }
+        .score-red { background: #450a0a; color: #f87171; }
+
+        /* Lanes list */
+        .lane-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        .lane-route { font-weight: 500; }
+        .lane-weight {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-left: 8px;
+        }
+
+        /* Empty states */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #64748b;
+        }
+        .empty-state p { font-size: 14px; }
+
+        /* Stats bar */
+        .stats-bar {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .stat {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px 16px;
+            flex: 1;
+            text-align: center;
+        }
+        .stat-value { font-size: 24px; font-weight: 700; color: #38bdf8; }
+        .stat-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+
+        /* Range slider */
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            border: none;
+            padding: 0;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #2563eb;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        /* Invoice status badges */
+        .status-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 9999px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-draft { background: #374151; color: #9ca3af; }
+        .badge-sent { background: #1e3a5f; color: #60a5fa; }
+        .badge-outstanding { background: #422006; color: #fbbf24; }
+        .badge-paid { background: #064e3b; color: #34d399; }
+        .badge-overdue { background: #450a0a; color: #f87171; }
+        .badge-factored { background: #3b0764; color: #c084fc; }
+        .badge-disputed { background: #431407; color: #fb923c; }
+
+        /* Amount colors */
+        .amount-positive { color: #34d399; }
+        .amount-negative { color: #f87171; }
+
+        /* Section headers */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        /* Controls row */
+        .controls-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* Reconciliation results */
+        .recon-result {
+            padding: 8px 12px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 13px;
+        }
+        .recon-match { color: #34d399; }
+        .recon-unmatched { color: #fbbf24; }
+
+        /* Bank connection item */
+        .bank-conn-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        /* Inline form */
+        .inline-form {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            display: none;
+        }
+        .inline-form.visible { display: block; }
+
+        /* Small action button */
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .btn-sm-blue { background: #1e3a5f; color: #60a5fa; }
+        .btn-sm-green { background: #064e3b; color: #34d399; }
+        .btn-sm-blue:hover { background: #1e40af; }
+        .btn-sm-green:hover { background: #047857; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🚛 AI Freight Agent</h1>
+    <span class="badge">MVP</span>
+</div>
+
+<div class="container">
+    <div class="tabs">
+        <button class="tab active" onclick="switchTab('setup')">Setup</button>
+        <button class="tab" onclick="switchTab('search')">Search Loads</button>
+        <button class="tab" onclick="switchTab('lanes')">Preferred Lanes</button>
+        <button class="tab" onclick="switchTab('bookkeeper')">Bookkeeper</button>
+    </div>
+
+    <!-- ===== TAB 1: SETUP ===== -->
+    <div id="tab-setup" class="tab-content active">
+        <div class="card">
+            <h2>Carrier Profile</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Company Name</label>
+                    <input id="company_name" placeholder="e.g. Swift Hauling LLC">
+                </div>
+                <div class="form-group">
+                    <label>MC Number (6 digits)</label>
+                    <input id="mc_number" placeholder="e.g. 123456" maxlength="6">
+                </div>
+                <div class="form-group">
+                    <label>DOT Number (7-8 digits)</label>
+                    <input id="dot_number" placeholder="e.g. 1234567" maxlength="8">
+                </div>
+                <div class="form-group">
+                    <label>Contact Name</label>
+                    <input id="contact_name" placeholder="e.g. John Smith">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input id="contact_email" type="email" placeholder="john@swift.com">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input id="contact_phone" placeholder="555-123-4567">
+                </div>
+                <div class="form-group full-width">
+                    <button class="btn btn-primary" onclick="saveCarrier()">Save Carrier Profile</button>
+                    <div id="carrier-msg" class="msg"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Truck Setup</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Truck Name / Label</label>
+                    <input id="truck_name" placeholder="e.g. Truck 1 - Pete 389">
+                </div>
+                <div class="form-group">
+                    <label>Equipment Type</label>
+                    <select id="equipment_type">
+                        <option value="dry_van">Dry Van</option>
+                        <option value="reefer">Reefer</option>
+                        <option value="flatbed">Flatbed</option>
+                        <option value="step_deck">Step Deck</option>
+                        <option value="power_only">Power Only</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Max Weight (lbs)</label>
+                    <input id="max_weight" type="number" value="44000">
+                </div>
+                <div class="form-group">
+                    <label>Current City</label>
+                    <input id="current_city" placeholder="e.g. Atlanta">
+                </div>
+                <div class="form-group">
+                    <label>Current State (2 letter)</label>
+                    <input id="current_state" placeholder="e.g. GA" maxlength="2">
+                </div>
+                <div class="form-group">
+                    <label>Current Latitude</label>
+                    <input id="current_lat" type="number" step="0.001" placeholder="e.g. 33.749">
+                </div>
+                <div class="form-group">
+                    <label>Current Longitude</label>
+                    <input id="current_lng" type="number" step="0.001" placeholder="e.g. -84.388">
+                </div>
+                <div class="form-group">
+                    <label>Max Deadhead Miles</label>
+                    <input id="max_deadhead" type="number" value="150">
+                </div>
+                <div class="form-group">
+                    <label>Min Rate Per Mile ($)</label>
+                    <input id="min_rate" type="number" step="0.10" value="2.00">
+                </div>
+                <div class="form-group">
+                    <label>&nbsp;</label>
+                    <button class="btn btn-success" onclick="saveTruck()">Save Truck</button>
+                </div>
+                <div class="form-group full-width">
+                    <div id="truck-msg" class="msg"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TAB 2: SEARCH LOADS ===== -->
+    <div id="tab-search" class="tab-content">
+        <div class="card">
+            <div class="search-bar">
+                <div class="form-group">
+                    <label>Select Truck</label>
+                    <select id="search-truck-select">
+                        <option value="">-- Select a truck --</option>
+                    </select>
+                </div>
+                <button class="btn btn-primary" onclick="searchLoads()">🔍 Search Loads</button>
+            </div>
+        </div>
+
+        <div class="stats-bar" id="stats-bar" style="display:none;">
+            <div class="stat">
+                <div class="stat-value" id="stat-total">0</div>
+                <div class="stat-label">Loads Found</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-avg-score">0</div>
+                <div class="stat-label">Avg Score</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-avg-rate">$0</div>
+                <div class="stat-label">Avg Rate/Mile</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-best">0</div>
+                <div class="stat-label">Best Score</div>
+            </div>
+        </div>
+
+        <div class="card" id="results-card">
+            <h2>Search Results</h2>
+            <div id="results-container">
+                <div class="empty-state">
+                    <p>Select a truck and click "Search Loads" to find matching freight.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TAB 3: PREFERRED LANES ===== -->
+    <div id="tab-lanes" class="tab-content">
+        <div class="card">
+            <h2>Add Preferred Lane</h2>
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Select Truck</label>
+                    <select id="lane-truck-select">
+                        <option value="">-- Select a truck --</option>
+                    </select>
+                </div>
+                <div class="form-group">&nbsp;</div>
+                <div class="form-group">
+                    <label>Origin City</label>
+                    <input id="lane_origin_city" placeholder="e.g. Atlanta">
+                </div>
+                <div class="form-group">
+                    <label>Origin State</label>
+                    <input id="lane_origin_state" placeholder="e.g. GA" maxlength="2">
+                </div>
+                <div class="form-group">
+                    <label>Destination City</label>
+                    <input id="lane_dest_city" placeholder="e.g. Dallas">
+                </div>
+                <div class="form-group">
+                    <label>Destination State</label>
+                    <input id="lane_dest_state" placeholder="e.g. TX" maxlength="2">
+                </div>
+                <div class="form-group full-width">
+                    <label>Priority Weight: <span id="weight-display">5</span></label>
+                    <input type="range" id="lane_weight" min="1" max="10" value="5"
+                           oninput="document.getElementById('weight-display').textContent = this.value">
+                </div>
+                <div class="form-group full-width">
+                    <button class="btn btn-success" onclick="addLane()">+ Add Lane</button>
+                    <div id="lane-msg" class="msg"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Saved Lanes</h2>
+            <div id="lanes-list">
+                <div class="empty-state">
+                    <p>Select a truck above to see its preferred lanes.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===== TAB 4: BOOKKEEPER ===== -->
+    <div id="tab-bookkeeper" class="tab-content">
+
+        <!-- Reconciliation Panel -->
+        <div class="card">
+            <div class="section-header">
+                <h2>Reconciliation</h2>
+                <button class="btn btn-primary" onclick="runReconciliation()">Reconcile Now</button>
+            </div>
+            <div id="recon-results" style="display:none">
+                <div class="stats-bar" id="recon-stats">
+                    <div class="stat">
+                        <div class="stat-value recon-match" id="recon-matched">0</div>
+                        <div class="stat-label">Matched</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value recon-unmatched" id="recon-unmatched-count">0</div>
+                        <div class="stat-label">Unmatched</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" style="color:#fbbf24" id="recon-review-count">0</div>
+                        <div class="stat-label">Needs Review</div>
+                    </div>
+                </div>
+                <div id="recon-newly-paid"></div>
+                <div id="recon-unmatched-list"></div>
+                <div id="recon-review-list"></div>
+            </div>
+        </div>
+
+        <!-- Invoice Stats -->
+        <div class="stats-bar" id="invoice-stats">
+            <div class="stat">
+                <div class="stat-value" id="stat-outstanding">$0</div>
+                <div class="stat-label">Outstanding</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="color:#f87171" id="stat-overdue">$0</div>
+                <div class="stat-label">Overdue</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="color:#34d399" id="stat-paid-month">$0</div>
+                <div class="stat-label">Paid This Month</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="stat-invoice-count">0</div>
+                <div class="stat-label">Invoices</div>
+            </div>
+        </div>
+
+        <!-- Invoice Management -->
+        <div class="card">
+            <div class="section-header">
+                <h2>Invoices</h2>
+                <div class="controls-row" style="margin-bottom:0">
+                    <select id="invoice-filter" onchange="loadInvoices()" style="width:auto">
+                        <option value="">All</option>
+                        <option value="draft">Draft</option>
+                        <option value="outstanding">Outstanding</option>
+                        <option value="overdue">Overdue</option>
+                        <option value="paid">Paid</option>
+                        <option value="sent">Sent</option>
+                    </select>
+                    <button class="btn btn-success" onclick="toggleCreateInvoice()">+ Create Invoice</button>
+                </div>
+            </div>
+
+            <div id="create-invoice-form" class="inline-form">
+                <div class="form-grid">
+                    <div class="form-group"><label>Broker Name</label><input id="inv_broker_name"></div>
+                    <div class="form-group"><label>Broker MC</label><input id="inv_broker_mc" maxlength="6"></div>
+                    <div class="form-group"><label>Origin City</label><input id="inv_origin_city"></div>
+                    <div class="form-group"><label>Origin State</label><input id="inv_origin_state" maxlength="2"></div>
+                    <div class="form-group"><label>Dest City</label><input id="inv_dest_city"></div>
+                    <div class="form-group"><label>Dest State</label><input id="inv_dest_state" maxlength="2"></div>
+                    <div class="form-group"><label>Amount ($)</label><input id="inv_amount" type="number" step="0.01"></div>
+                    <div class="form-group"><label>Rate/Mile ($)</label><input id="inv_rate" type="number" step="0.01"></div>
+                    <div class="form-group"><label>Miles</label><input id="inv_miles" type="number"></div>
+                    <div class="form-group"><label>Due Date</label><input id="inv_due_date" type="date"></div>
+                    <div class="form-group full-width">
+                        <button class="btn btn-primary" onclick="createInvoice()">Save Invoice</button>
+                        <div id="invoice-create-msg" class="msg"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="invoice-table-container">
+                <div class="empty-state"><p>No invoices yet.</p></div>
+            </div>
+        </div>
+
+        <!-- Bank & Transactions -->
+        <div class="card">
+            <div class="section-header">
+                <h2>Bank Account</h2>
+                <div class="controls-row" style="margin-bottom:0">
+                    <button class="btn btn-primary" onclick="connectBankPlaid()">Connect Bank (Plaid)</button>
+                    <button class="btn btn-success" onclick="document.getElementById('csv-file-input').click()">Upload CSV</button>
+                    <input type="file" id="csv-file-input" accept=".csv" style="display:none" onchange="uploadCSV(this)">
+                </div>
+            </div>
+            <div id="bank-connections-list"></div>
+        </div>
+
+        <div class="card">
+            <div class="section-header">
+                <h2>Transactions</h2>
+                <div class="controls-row" style="margin-bottom:0">
+                    <select id="txn-filter" onchange="loadTransactions()" style="width:auto">
+                        <option value="all">All</option>
+                        <option value="deposits">Deposits Only</option>
+                        <option value="unreconciled">Unreconciled</option>
+                    </select>
+                    <button class="btn btn-primary" onclick="categorizeAll()">Categorize All</button>
+                </div>
+            </div>
+            <div id="txn-table-container">
+                <div class="empty-state"><p>Connect a bank account or upload a CSV to see transactions.</p></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const API = '';  // Same origin
+
+    // State
+    let carrierId = null;
+    let trucks = [];
+
+    // ===== TAB SWITCHING =====
+    function switchTab(name) {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelector(`[onclick="switchTab('${name}')"]`).classList.add('active');
+        document.getElementById(`tab-${name}`).classList.add('active');
+
+        if (name === 'search' || name === 'lanes') loadTruckDropdowns();
+        if (name === 'bookkeeper') {
+            loadInvoices();
+            loadBankConnections();
+        }
+    }
+
+    // ===== SHOW MESSAGES =====
+    function showMsg(id, text, type) {
+        const el = document.getElementById(id);
+        el.textContent = text;
+        el.className = `msg ${type}`;
+        setTimeout(() => { el.className = 'msg'; }, 5000);
+    }
+
+    // ===== CARRIER =====
+    async function saveCarrier() {
+        const data = {
+            company_name: document.getElementById('company_name').value,
+            mc_number: document.getElementById('mc_number').value,
+            dot_number: document.getElementById('dot_number').value,
+            contact_name: document.getElementById('contact_name').value,
+            contact_email: document.getElementById('contact_email').value,
+            contact_phone: document.getElementById('contact_phone').value,
+        };
+        try {
+            const resp = await fetch(`${API}/api/carriers`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await resp.json();
+            if (resp.ok) {
+                carrierId = result.id;
+                showMsg('carrier-msg', `Carrier saved! ID: ${result.id}`, 'success');
+            } else {
+                showMsg('carrier-msg', `Error: ${JSON.stringify(result.detail)}`, 'error');
+            }
+        } catch (e) {
+            showMsg('carrier-msg', `Network error: ${e.message}`, 'error');
+        }
+    }
+
+    // ===== TRUCK =====
+    async function saveTruck() {
+        if (!carrierId) {
+            showMsg('truck-msg', 'Save a carrier profile first!', 'error');
+            return;
+        }
+        const data = {
+            carrier_id: carrierId,
+            name: document.getElementById('truck_name').value,
+            equipment_type: document.getElementById('equipment_type').value,
+            max_weight_lbs: parseInt(document.getElementById('max_weight').value),
+            current_city: document.getElementById('current_city').value,
+            current_state: document.getElementById('current_state').value.toUpperCase(),
+            current_lat: parseFloat(document.getElementById('current_lat').value),
+            current_lng: parseFloat(document.getElementById('current_lng').value),
+            max_deadhead_miles: parseInt(document.getElementById('max_deadhead').value),
+            min_rate_per_mile: document.getElementById('min_rate').value,
+        };
+        try {
+            const resp = await fetch(`${API}/api/trucks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            const result = await resp.json();
+            if (resp.ok) {
+                showMsg('truck-msg', `Truck "${result.name}" saved! ID: ${result.id}`, 'success');
+                loadTruckDropdowns();
+            } else {
+                showMsg('truck-msg', `Error: ${JSON.stringify(result.detail)}`, 'error');
+            }
+        } catch (e) {
+            showMsg('truck-msg', `Network error: ${e.message}`, 'error');
+        }
+    }
+
+    // ===== LOAD TRUCK DROPDOWNS =====
+    async function loadTruckDropdowns() {
+        if (!carrierId) return;
+        try {
+            const resp = await fetch(`${API}/api/trucks?carrier_id=${carrierId}`);
+            trucks = await resp.json();
+            ['search-truck-select', 'lane-truck-select'].forEach(id => {
+                const sel = document.getElementById(id);
+                const current = sel.value;
+                sel.innerHTML = '<option value="">-- Select a truck --</option>';
+                trucks.forEach(t => {
+                    sel.innerHTML += `<option value="${t.id}">${t.name} (${t.equipment_type})</option>`;
+                });
+                sel.value = current;
+            });
+        } catch (e) {
+            console.error('Failed to load trucks:', e);
+        }
+    }
+
+    // ===== SEARCH LOADS =====
+    async function searchLoads() {
+        const truckId = document.getElementById('search-truck-select').value;
+        if (!truckId) {
+            alert('Select a truck first');
+            return;
+        }
+        try {
+            const resp = await fetch(`${API}/api/loads/search?truck_id=${truckId}`);
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                document.getElementById('results-container').innerHTML =
+                    `<div class="empty-state"><p>Error: ${data.detail}</p></div>`;
+                return;
+            }
+
+            const loads = data.loads;
+
+            // Stats
+            document.getElementById('stats-bar').style.display = 'flex';
+            document.getElementById('stat-total').textContent = loads.length;
+
+            if (loads.length === 0) {
+                document.getElementById('stat-avg-score').textContent = '0';
+                document.getElementById('stat-avg-rate').textContent = '$0';
+                document.getElementById('stat-best').textContent = '0';
+                document.getElementById('results-container').innerHTML =
+                    '<div class="empty-state"><p>No loads match your truck parameters. Try increasing deadhead miles or lowering your rate floor.</p></div>';
+                return;
+            }
+
+            const avgScore = Math.round(loads.reduce((s, l) => s + l.score, 0) / loads.length);
+            const avgRate = (loads.reduce((s, l) => s + l.rate_per_mile, 0) / loads.length).toFixed(2);
+            const best = loads[0].score;
+
+            document.getElementById('stat-avg-score').textContent = avgScore;
+            document.getElementById('stat-avg-rate').textContent = `$${avgRate}`;
+            document.getElementById('stat-best').textContent = best;
+
+            // Table
+            let html = `<div style="overflow-x:auto;"><table class="results-table">
+                <thead><tr>
+                    <th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th>
+                    <th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th>
+                    <th>Pickup</th><th>Broker</th>
+                </tr></thead><tbody>`;
+
+            loads.forEach(l => {
+                const scoreClass = l.score >= 70 ? 'score-green' : l.score >= 40 ? 'score-yellow' : 'score-red';
+                html += `<tr>
+                    <td><span class="score-badge ${scoreClass}">${l.score}</span></td>
+                    <td>${l.origin_city}, ${l.origin_state}</td>
+                    <td>${l.destination_city}, ${l.destination_state}</td>
+                    <td>${l.miles}</td>
+                    <td>$${l.rate_per_mile.toFixed(2)}</td>
+                    <td>$${l.rate_total.toFixed(2)}</td>
+                    <td>${l.deadhead_miles} mi</td>
+                    <td>${l.equipment_type.replace('_', ' ')}</td>
+                    <td>${l.pickup_date}</td>
+                    <td>${l.broker_name}</td>
+                </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            document.getElementById('results-container').innerHTML = html;
+
+        } catch (e) {
+            document.getElementById('results-container').innerHTML =
+                `<div class="empty-state"><p>Network error: ${e.message}</p></div>`;
+        }
+    }
+
+    // ===== PREFERRED LANES =====
+    const laneSelect = document.getElementById('lane-truck-select');
+    laneSelect.addEventListener('change', loadLanes);
+
+    async function loadLanes() {
+        const truckId = document.getElementById('lane-truck-select').value;
+        if (!truckId) {
+            document.getElementById('lanes-list').innerHTML =
+                '<div class="empty-state"><p>Select a truck to see its lanes.</p></div>';
+            return;
+        }
+        try {
+            const resp = await fetch(`${API}/api/trucks/${truckId}/lanes`);
+            const lanes = await resp.json();
+
+            if (lanes.length === 0) {
+                document.getElementById('lanes-list').innerHTML =
+                    '<div class="empty-state"><p>No preferred lanes yet. Add one above!</p></div>';
+                return;
+            }
+
+            let html = '';
+            lanes.forEach(l => {
+                html += `<div class="lane-item">
+                    <div>
+                        <span class="lane-route">${l.origin_city}, ${l.origin_state} → ${l.destination_city}, ${l.destination_state}</span>
+                        <span class="lane-weight">Priority: ${l.priority_weight}/10</span>
+                    </div>
+                    <button class="btn btn-danger" onclick="deleteLane(${truckId}, ${l.id})">Remove</button>
+                </div>`;
+            });
+            document.getElementById('lanes-list').innerHTML = html;
+        } catch (e) {
+            console.error('Failed to load lanes:', e);
+        }
+    }
+
+    async function addLane() {
+        const truckId = document.getElementById('lane-truck-select').value;
+        if (!truckId) {
+            showMsg('lane-msg', 'Select a truck first!', 'error');
+            return;
+        }
+        const data = {
+            origin_city: document.getElementById('lane_origin_city').value,
+            origin_state: document.getElementById('lane_origin_state').value.toUpperCase(),
+            destination_city: document.getElementById('lane_dest_city').value,
+            destination_state: document.getElementById('lane_dest_state').value.toUpperCase(),
+            priority_weight: parseInt(document.getElementById('lane_weight').value),
+        };
+        try {
+            const resp = await fetch(`${API}/api/trucks/${truckId}/lanes`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+            });
+            if (resp.ok) {
+                showMsg('lane-msg', 'Lane added!', 'success');
+                loadLanes();
+                // Clear inputs
+                document.getElementById('lane_origin_city').value = '';
+                document.getElementById('lane_origin_state').value = '';
+                document.getElementById('lane_dest_city').value = '';
+                document.getElementById('lane_dest_state').value = '';
+            } else {
+                const err = await resp.json();
+                showMsg('lane-msg', `Error: ${JSON.stringify(err.detail)}`, 'error');
+            }
+        } catch (e) {
+            showMsg('lane-msg', `Network error: ${e.message}`, 'error');
+        }
+    }
+
+    async function deleteLane(truckId, laneId) {
+        try {
+            await fetch(`${API}/api/trucks/${truckId}/lanes/${laneId}`, { method: 'DELETE' });
+            loadLanes();
+        } catch (e) {
+            console.error('Failed to delete lane:', e);
+        }
+    }
+
+    // ===== BOOKKEEPER STATE =====
+    let activeBankConnectionId = null;
+
+    // ===== INVOICES =====
+    function toggleCreateInvoice() {
+        const form = document.getElementById('create-invoice-form');
+        form.classList.toggle('visible');
+    }
+
+    async function loadInvoices() {
+        if (!carrierId) return;
+        const filter = document.getElementById('invoice-filter')?.value || '';
+        let url = `${API}/api/invoices?carrier_id=${carrierId}`;
+        if (filter) url += `&status=${filter}`;
+
+        try {
+            const resp = await fetch(url);
+            const invoices = await resp.json();
+
+            // Update stats
+            const allResp = await fetch(`${API}/api/invoices?carrier_id=${carrierId}`);
+            const allInvoices = await allResp.json();
+
+            const outstanding = allInvoices.filter(i => i.status === 'outstanding').reduce((s, i) => s + parseFloat(i.amount), 0);
+            const overdue = allInvoices.filter(i => i.status === 'overdue').reduce((s, i) => s + parseFloat(i.amount), 0);
+            const now = new Date();
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+            const paidThisMonth = allInvoices.filter(i => i.status === 'paid' && i.payment_date >= monthStart).reduce((s, i) => s + parseFloat(i.amount), 0);
+
+            document.getElementById('stat-outstanding').textContent = `$${outstanding.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('stat-overdue').textContent = `$${overdue.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('stat-paid-month').textContent = `$${paidThisMonth.toLocaleString('en-US', {minimumFractionDigits: 2})}`;
+            document.getElementById('stat-invoice-count').textContent = allInvoices.length;
+
+            if (invoices.length === 0) {
+                document.getElementById('invoice-table-container').innerHTML = '<div class="empty-state"><p>No invoices match your filter.</p></div>';
+                return;
+            }
+
+            let html = `<div style="overflow-x:auto"><table class="results-table">
+                <thead><tr><th>#</th><th>Broker</th><th>Route</th><th>Amount</th><th>Rate/Mi</th><th>Invoice Date</th><th>Due Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>`;
+
+            invoices.forEach(inv => {
+                const statusClass = `badge-${inv.status}`;
+                let actions = '';
+                if (inv.status === 'draft') {
+                    actions = `<button class="btn-sm btn-sm-blue" onclick="markInvoiceAs(${inv.id},'sent')">Mark Sent</button>`;
+                } else if (['outstanding','sent','overdue'].includes(inv.status)) {
+                    actions = `<button class="btn-sm btn-sm-green" onclick="markInvoiceAs(${inv.id},'paid')">Mark Paid</button>`;
+                }
+
+                html += `<tr>
+                    <td>${inv.id}</td>
+                    <td>${inv.broker_name}</td>
+                    <td>${inv.origin_city}, ${inv.origin_state} → ${inv.destination_city}, ${inv.destination_state}</td>
+                    <td>$${parseFloat(inv.amount).toFixed(2)}</td>
+                    <td>$${parseFloat(inv.rate_per_mile).toFixed(2)}</td>
+                    <td>${inv.invoice_date}</td>
+                    <td>${inv.due_date}</td>
+                    <td><span class="status-badge ${statusClass}">${inv.status}</span></td>
+                    <td>${actions}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('invoice-table-container').innerHTML = html;
+        } catch (e) {
+            console.error('Failed to load invoices:', e);
+        }
+    }
+
+    async function createInvoice() {
+        if (!carrierId) { showMsg('invoice-create-msg', 'Save a carrier first!', 'error'); return; }
+        const data = {
+            carrier_id: carrierId,
+            broker_name: document.getElementById('inv_broker_name').value,
+            broker_mc: document.getElementById('inv_broker_mc').value,
+            origin_city: document.getElementById('inv_origin_city').value,
+            origin_state: document.getElementById('inv_origin_state').value.toUpperCase(),
+            destination_city: document.getElementById('inv_dest_city').value,
+            destination_state: document.getElementById('inv_dest_state').value.toUpperCase(),
+            amount: parseFloat(document.getElementById('inv_amount').value),
+            rate_per_mile: parseFloat(document.getElementById('inv_rate').value),
+            miles: parseInt(document.getElementById('inv_miles').value),
+            due_date: document.getElementById('inv_due_date').value,
+        };
+        try {
+            const resp = await fetch(`${API}/api/invoices`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data),
+            });
+            if (resp.ok) {
+                showMsg('invoice-create-msg', 'Invoice created!', 'success');
+                document.getElementById('create-invoice-form').classList.remove('visible');
+                loadInvoices();
+            } else {
+                const err = await resp.json();
+                showMsg('invoice-create-msg', `Error: ${JSON.stringify(err.detail)}`, 'error');
+            }
+        } catch (e) {
+            showMsg('invoice-create-msg', `Network error: ${e.message}`, 'error');
+        }
+    }
+
+    async function markInvoiceAs(invoiceId, status) {
+        const body = { status };
+        if (status === 'paid') body.payment_date = new Date().toISOString().split('T')[0];
+        try {
+            await fetch(`${API}/api/invoices/${invoiceId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            loadInvoices();
+        } catch (e) {
+            console.error('Failed to update invoice:', e);
+        }
+    }
+
+    // ===== BANK CONNECTIONS =====
+    async function connectBankPlaid() {
+        if (!carrierId) { alert('Save a carrier first!'); return; }
+        try {
+            const resp = await fetch(`${API}/api/bank-connections/plaid/link`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({carrier_id: carrierId}),
+            });
+            if (resp.ok) {
+                loadBankConnections();
+            }
+        } catch (e) {
+            console.error('Plaid link failed:', e);
+        }
+    }
+
+    async function loadBankConnections() {
+        if (!carrierId) return;
+        try {
+            const resp = await fetch(`${API}/api/bank-connections?carrier_id=${carrierId}`);
+            const connections = await resp.json();
+
+            if (connections.length === 0) {
+                document.getElementById('bank-connections-list').innerHTML = '<div class="empty-state"><p>No bank accounts connected.</p></div>';
+                return;
+            }
+
+            let html = '';
+            connections.forEach(conn => {
+                const synced = conn.last_synced_at ? new Date(conn.last_synced_at).toLocaleString() : 'Never';
+                html += `<div class="bank-conn-item">
+                    <div>
+                        <strong>${conn.institution_name}</strong> — ...${conn.account_mask}
+                        <br><span style="font-size:12px;color:#94a3b8">Last synced: ${synced}</span>
+                    </div>
+                    <div class="controls-row" style="margin-bottom:0">
+                        <button class="btn-sm btn-sm-blue" onclick="syncTransactions(${conn.id})">Sync Now</button>
+                    </div>
+                </div>`;
+                if (!activeBankConnectionId) activeBankConnectionId = conn.id;
+            });
+            document.getElementById('bank-connections-list').innerHTML = html;
+
+            if (activeBankConnectionId) loadTransactions();
+        } catch (e) {
+            console.error('Failed to load bank connections:', e);
+        }
+    }
+
+    async function syncTransactions(connectionId) {
+        try {
+            await fetch(`${API}/api/bank-connections/${connectionId}/sync`, {method: 'POST'});
+            activeBankConnectionId = connectionId;
+            loadBankConnections();
+            loadTransactions();
+        } catch (e) {
+            console.error('Sync failed:', e);
+        }
+    }
+
+    async function uploadCSV(input) {
+        if (!carrierId) { alert('Save a carrier first!'); return; }
+        const file = input.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+        try {
+            const resp = await fetch(`${API}/api/bank-connections/upload?carrier_id=${carrierId}`, {
+                method: 'POST',
+                body: formData,
+            });
+            const data = await resp.json();
+            if (resp.ok) {
+                alert(`Imported ${data.imported} transactions (${data.skipped} skipped)`);
+                loadBankConnections();
+            } else {
+                alert(`Error: ${data.detail}`);
+            }
+        } catch (e) {
+            console.error('CSV upload failed:', e);
+        }
+        input.value = '';
+    }
+
+    // ===== TRANSACTIONS =====
+    async function loadTransactions() {
+        if (!activeBankConnectionId) return;
+        const filter = document.getElementById('txn-filter')?.value || 'all';
+        let url = `${API}/api/transactions?bank_connection_id=${activeBankConnectionId}`;
+        if (filter === 'unreconciled') url += '&is_reconciled=false';
+
+        try {
+            const resp = await fetch(url);
+            let txns = await resp.json();
+
+            if (filter === 'deposits') txns = txns.filter(t => t.is_deposit);
+
+            if (txns.length === 0) {
+                document.getElementById('txn-table-container').innerHTML = '<div class="empty-state"><p>No transactions match your filter.</p></div>';
+                return;
+            }
+
+            let html = `<div style="overflow-x:auto"><table class="results-table">
+                <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Category</th><th>Reconciled</th><th>Invoice</th></tr></thead><tbody>`;
+
+            txns.forEach(t => {
+                const amtClass = t.is_deposit ? 'amount-positive' : 'amount-negative';
+                const amtStr = (t.is_deposit ? '+' : '') + `$${Math.abs(parseFloat(t.amount)).toFixed(2)}`;
+                const cat = t.category ? `<span class="status-badge badge-draft">${t.category}</span>` : '';
+                const recon = t.is_reconciled ? '\u2713' : '';
+                const invoice = t.matched_invoice_id ? `#${t.matched_invoice_id}` : '';
+
+                html += `<tr>
+                    <td>${t.date}</td>
+                    <td>${t.description}</td>
+                    <td class="${amtClass}">${amtStr}</td>
+                    <td>${cat}</td>
+                    <td>${recon}</td>
+                    <td>${invoice}</td>
+                </tr>`;
+            });
+            html += '</tbody></table></div>';
+            document.getElementById('txn-table-container').innerHTML = html;
+        } catch (e) {
+            console.error('Failed to load transactions:', e);
+        }
+    }
+
+    async function categorizeAll() {
+        if (!activeBankConnectionId) { alert('Connect a bank first!'); return; }
+        try {
+            const resp = await fetch(`${API}/api/transactions/categorize?bank_connection_id=${activeBankConnectionId}`, {method: 'POST'});
+            const data = await resp.json();
+            alert(`Categorized ${data.categorized_count} transactions`);
+            loadTransactions();
+        } catch (e) {
+            console.error('Categorization failed:', e);
+        }
+    }
+
+    // ===== RECONCILIATION =====
+    async function runReconciliation() {
+        if (!carrierId) { alert('Save a carrier first!'); return; }
+        try {
+            const resp = await fetch(`${API}/api/reconcile?carrier_id=${carrierId}`, {method: 'POST'});
+            const data = await resp.json();
+
+            document.getElementById('recon-results').style.display = 'block';
+            document.getElementById('recon-matched').textContent = data.matched_count;
+            document.getElementById('recon-unmatched-count').textContent = data.unmatched_deposits.length;
+            document.getElementById('recon-review-count').textContent = data.needs_review.length;
+
+            // Newly paid
+            let paidHtml = '';
+            if (data.newly_paid_invoices.length > 0) {
+                paidHtml = '<h3 style="font-size:13px;color:#34d399;margin:8px 0">Newly Paid:</h3>';
+                data.newly_paid_invoices.forEach(inv => {
+                    paidHtml += `<div class="recon-result recon-match">\u2713 ${inv.broker_name} \u2014 $${parseFloat(inv.amount).toFixed(2)}</div>`;
+                });
+            }
+            document.getElementById('recon-newly-paid').innerHTML = paidHtml;
+
+            // Unmatched deposits with manual assignment
+            let unmHtml = '';
+            if (data.unmatched_deposits.length > 0) {
+                unmHtml = '<h3 style="font-size:13px;color:#fbbf24;margin:8px 0">Unmatched Deposits:</h3>';
+                // Fetch outstanding invoices for dropdown
+                const invResp = await fetch(`${API}/api/invoices?carrier_id=${carrierId}&status=outstanding`);
+                const outstandingInvoices = await invResp.json();
+
+                data.unmatched_deposits.forEach(dep => {
+                    let opts = '<option value="">Assign to invoice...</option>';
+                    outstandingInvoices.forEach(inv => {
+                        opts += `<option value="${inv.id}">#${inv.id} ${inv.broker_name} $${parseFloat(inv.amount).toFixed(2)}</option>`;
+                    });
+                    unmHtml += `<div class="recon-result recon-unmatched">
+                        $${parseFloat(dep.amount).toFixed(2)} \u2014 ${dep.description} (${dep.date})
+                        <select style="margin-left:8px;font-size:12px" onchange="manualAssign(${dep.id}, this.value, '${dep.date}')">${opts}</select>
+                    </div>`;
+                });
+            }
+            document.getElementById('recon-unmatched-list').innerHTML = unmHtml;
+
+            // Needs review
+            let revHtml = '';
+            if (data.needs_review.length > 0) {
+                revHtml = '<h3 style="font-size:13px;color:#fbbf24;margin:8px 0">Needs Review (multiple matches):</h3>';
+                data.needs_review.forEach(item => {
+                    const invoiceList = item.possible_invoices.map(i => `#${i.id} ${i.broker_name}`).join(', ');
+                    revHtml += `<div class="recon-result">$${parseFloat(item.deposit.amount).toFixed(2)} \u2014 ${item.deposit.description} \u2192 Could match: ${invoiceList}</div>`;
+                });
+            }
+            document.getElementById('recon-review-list').innerHTML = revHtml;
+
+            // Refresh tables
+            loadInvoices();
+            loadTransactions();
+        } catch (e) {
+            console.error('Reconciliation failed:', e);
+        }
+    }
+
+    async function manualAssign(depositId, invoiceId, depositDate) {
+        if (!invoiceId) return;
+        try {
+            await fetch(`${API}/api/invoices/${invoiceId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: 'paid', payment_date: depositDate}),
+            });
+            loadInvoices();
+            loadTransactions();
+            // Re-run reconciliation display refresh
+            runReconciliation();
+        } catch (e) {
+            console.error('Manual assignment failed:', e);
+        }
+    }
+</script>
+
+</body>
+</html>
