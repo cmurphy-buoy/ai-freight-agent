@@ -880,8 +880,12 @@
         }
     }
 
+    // Store current loads for booking
+    let currentLoads = [];
+
     // Shared renderer for both browse and search modes
     function renderLoadResults(loads, scored) {
+        currentLoads = loads;
         document.getElementById('stats-bar').style.display = 'flex';
         document.getElementById('stat-total').textContent = loads.length;
 
@@ -907,14 +911,15 @@
         }
 
         let headers = scored
-            ? '<th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th>'
-            : '<th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Weight</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th>';
+            ? '<th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th><th></th>'
+            : '<th>Origin</th><th>Destination</th><th>Miles</th><th>Rate/Mi</th><th>Total</th><th>Weight</th><th>Equipment</th><th>Pickup</th><th>Broker</th><th>Source</th><th></th>';
 
         let html = `<div style="overflow-x:auto;"><table class="results-table"><thead><tr>${headers}</tr></thead><tbody>`;
 
         loads.forEach(l => {
             if (scored) {
                 const scoreClass = l.score >= 70 ? 'score-green' : l.score >= 40 ? 'score-yellow' : 'score-red';
+                const idx = loads.indexOf(l);
                 html += `<tr>
                     <td><span class="score-badge ${scoreClass}">${l.score}</span></td>
                     <td>${escapeHtml(l.origin_city)}, ${escapeHtml(l.origin_state)}</td>
@@ -927,8 +932,10 @@
                     <td>${escapeHtml(l.pickup_date)}</td>
                     <td>${escapeHtml(l.broker_name)}</td>
                     <td><span class="status-badge ${l.source === 'DAT' ? 'badge-source-dat' : 'badge-source-ts'}">${escapeHtml(l.source || 'DAT')}</span></td>
+                    <td><button class="btn-sm btn-sm-green" onclick="bookLoad(${idx})">Book</button></td>
                 </tr>`;
             } else {
+                const idx = loads.indexOf(l);
                 const weightStr = l.weight_lbs > 0 ? `${(l.weight_lbs/1000).toFixed(0)}k lbs` : 'N/A';
                 html += `<tr>
                     <td>${escapeHtml(l.origin_city)}, ${escapeHtml(l.origin_state)}</td>
@@ -941,12 +948,50 @@
                     <td>${escapeHtml(l.pickup_date)}</td>
                     <td>${escapeHtml(l.broker_name)}</td>
                     <td><span class="status-badge ${l.source === 'DAT' ? 'badge-source-dat' : 'badge-source-ts'}">${escapeHtml(l.source || 'DAT')}</span></td>
+                    <td><button class="btn-sm btn-sm-green" onclick="bookLoad(${idx})">Book</button></td>
                 </tr>`;
             }
         });
 
         html += '</tbody></table></div>';
         document.getElementById('results-container').innerHTML = html;
+    }
+
+    // ===== BOOK A LOAD =====
+    async function bookLoad(index) {
+        const load = currentLoads[index];
+        if (!load) { alert('Load not found'); return; }
+        if (!carrierId) { alert('Save a carrier profile first (Setup tab)!'); return; }
+
+        try {
+            const resp = await fetch(`${API}/api/invoices/from-load`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    carrier_id: carrierId,
+                    broker_name: load.broker_name,
+                    broker_mc: load.broker_mc,
+                    origin_city: load.origin_city,
+                    origin_state: load.origin_state,
+                    destination_city: load.destination_city,
+                    destination_state: load.destination_state,
+                    rate_total: load.rate_total,
+                    rate_per_mile: load.rate_per_mile,
+                    miles: load.miles,
+                    load_reference: load.load_id,
+                }),
+            });
+            if (resp.ok) {
+                const inv = await resp.json();
+                alert(`Booked! Invoice #${inv.id} created for ${load.broker_name} — $${load.rate_total.toFixed(2)}`);
+                switchTab('bookkeeper');
+            } else {
+                const err = await resp.json();
+                alert(`Error: ${JSON.stringify(err.detail)}`);
+            }
+        } catch (e) {
+            alert(`Network error: ${e.message}`);
+        }
     }
 
     // ===== PREFERRED LANES =====
