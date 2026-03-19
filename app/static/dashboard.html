@@ -315,6 +315,10 @@
         .btn-sm-green { background: #064e3b; color: #34d399; }
         .btn-sm-blue:hover { background: #1e40af; }
         .btn-sm-green:hover { background: #047857; }
+
+        /* Load board source badges */
+        .badge-source-dat { background: #1e3a5f; color: #60a5fa; }
+        .badge-source-ts { background: #3b0764; color: #c084fc; }
     </style>
 </head>
 <body>
@@ -847,7 +851,7 @@
                 <thead><tr>
                     <th>Score</th><th>Origin</th><th>Destination</th><th>Miles</th>
                     <th>Rate/Mi</th><th>Total</th><th>Deadhead</th><th>Equipment</th>
-                    <th>Pickup</th><th>Broker</th>
+                    <th>Pickup</th><th>Broker</th><th>Source</th>
                 </tr></thead><tbody>`;
 
             loads.forEach(l => {
@@ -863,6 +867,7 @@
                     <td>${escapeHtml(l.equipment_type.replaceAll('_', ' '))}</td>
                     <td>${escapeHtml(l.pickup_date)}</td>
                     <td>${escapeHtml(l.broker_name)}</td>
+                    <td><span class="status-badge ${l.source === 'DAT' ? 'badge-source-dat' : 'badge-source-ts'}">${escapeHtml(l.source || 'DAT')}</span></td>
                 </tr>`;
             });
 

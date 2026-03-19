@@ -16,13 +16,15 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.models.truck import Truck, PreferredLane
 from app.services.mock_dat import MockDATService
+from app.services.mock_truckstop import MockTruckstopService
 from app.services.scoring import LoadScoringService
 
 router = APIRouter(tags=["loads"])
 
-# Create one instance of the mock service (shared across requests)
-# In production, you'd swap this with RealDATService
+# Create one instance of each mock service (shared across requests)
+# In production, swap with RealDATService / RealTruckstopService
 dat_service = MockDATService(seed=42)
+truckstop_service = MockTruckstopService(seed=99)
 
 
 @router.get("/api/loads/search")
@@ -51,13 +53,20 @@ async def search_loads(
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
 
-    # Step 2: Search the load board
-    raw_loads = dat_service.search_loads(
+    # Step 2: Search both load boards and merge results
+    dat_loads = dat_service.search_loads(
         equipment_type=truck.equipment_type.value,
         origin_lat=truck.current_lat,
         origin_lng=truck.current_lng,
         radius_miles=truck.max_deadhead_miles,
     )
+    ts_loads = truckstop_service.search_loads(
+        equipment_type=truck.equipment_type.value,
+        origin_lat=truck.current_lat,
+        origin_lng=truck.current_lng,
+        radius_miles=truck.max_deadhead_miles,
+    )
+    raw_loads = dat_loads + ts_loads
 
     # Step 3: Filter out loads that are too heavy for this truck
     filtered = [

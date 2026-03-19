@@ -131,6 +131,7 @@ def _generate_loads(count: int = 65) -> list[dict]:
 
         loads.append({
             "load_id": f"DAT-{100000 + i}",
+            "source": "DAT",
             "origin_city": origin[0],
             "origin_state": origin[1],
             "origin_lat": origin[2],
