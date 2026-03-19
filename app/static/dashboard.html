@@ -324,6 +324,14 @@
         .btn-sm-blue:hover { background: #1e40af; }
         .btn-sm-green:hover { background: #047857; }
 
+        /* Bid status badges */
+        .badge-pending { background: #374151; color: #9ca3af; }
+        .badge-submitted { background: #1e3a5f; color: #60a5fa; }
+        .badge-accepted { background: #064e3b; color: #34d399; }
+        .badge-rejected { background: #450a0a; color: #f87171; }
+        .badge-expired { background: #422006; color: #fbbf24; }
+        .badge-withdrawn { background: #374151; color: #9ca3af; }
+
         /* Load board source badges */
         .badge-source-dat { background: #1e3a5f; color: #60a5fa; }
         .badge-source-ts { background: #3b0764; color: #c084fc; }
@@ -498,6 +506,22 @@
                     <p>Select a truck and click "Search Loads" to find matching freight.</p>
                 </div>
             </div>
+        </div>
+
+        <div class="card" id="auto-bid-card" style="display:none">
+            <div class="section-header">
+                <h2>Auto-Bid</h2>
+                <div class="controls-row" style="margin-bottom:0">
+                    <select id="bid-strategy" style="width:auto">
+                        <option value="market">Market Rate (0%)</option>
+                        <option value="aggressive">Aggressive (-5%)</option>
+                        <option value="conservative">Conservative (+5%)</option>
+                    </select>
+                    <input id="bid-min-score" type="number" value="70" min="0" max="100" style="width:80px" placeholder="Min Score">
+                    <button class="btn btn-primary" onclick="runAutoBid()">Auto-Bid Top Loads</button>
+                </div>
+            </div>
+            <div id="auto-bid-results"></div>
         </div>
     </div>
 
@@ -1052,6 +1076,71 @@
 
         html += '</tbody></table></div>';
         document.getElementById('results-container').innerHTML = html;
+
+        // Show auto-bid card when a truck is selected and loads are found
+        const truckId = document.getElementById('search-truck-select').value;
+        document.getElementById('auto-bid-card').style.display = (truckId && loads.length > 0) ? 'block' : 'none';
+    }
+
+    // ===== AUTO-BID =====
+    async function runAutoBid() {
+        const truckId = document.getElementById('search-truck-select').value;
+        if (!truckId || !carrierId) { alert('Select a truck first'); return; }
+
+        const strategy = document.getElementById('bid-strategy').value;
+        const minScore = parseInt(document.getElementById('bid-min-score').value) || 70;
+
+        try {
+            const resp = await fetch(`${API}/api/bids/auto-bid?carrier_id=${carrierId}&truck_id=${truckId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({min_score: minScore, bid_strategy: strategy, max_bids_per_search: 3}),
+            });
+            if (!resp.ok) { alert('Auto-bid failed'); return; }
+            const data = await resp.json();
+
+            let html = `<p style="margin:8px 0;font-size:13px">Searched ${data.loads_searched} loads, ${data.qualifying_loads} qualified (score >= ${minScore}), placed ${data.bids_placed} bids:</p>`;
+            if (data.bids.length > 0) {
+                html += '<table class="results-table"><thead><tr><th>Load</th><th>Route</th><th>Listed Rate</th><th>Our Bid</th><th>Score</th><th>Status</th></tr></thead><tbody>';
+                data.bids.forEach(b => {
+                    html += `<tr>
+                        <td>${escapeHtml(b.broker_name)}</td>
+                        <td>${escapeHtml(b.origin_city)}, ${escapeHtml(b.origin_state)} &rarr; ${escapeHtml(b.destination_city)}, ${escapeHtml(b.destination_state)}</td>
+                        <td>$${parseFloat(b.listed_rate).toFixed(2)}</td>
+                        <td class="amount-positive">$${parseFloat(b.bid_amount).toFixed(2)}</td>
+                        <td><span class="score-badge score-green">${b.score}</span></td>
+                        <td><span class="status-badge badge-submitted">${escapeHtml(b.status)}</span></td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+            }
+            document.getElementById('auto-bid-results').innerHTML = html;
+        } catch (e) {
+            console.error('Auto-bid failed:', e);
+        }
+    }
+
+    // ===== BROKER COMMS =====
+    async function generateCheckCall(dispatchId) {
+        try {
+            const resp = await fetch(`${API}/api/comms/check-call/${dispatchId}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            alert(`Subject: ${data.subject}\n\n${data.body}`);
+        } catch (e) {
+            console.error('Failed to generate check call:', e);
+        }
+    }
+
+    async function generateInvoiceReminder(invoiceId) {
+        try {
+            const resp = await fetch(`${API}/api/comms/invoice-reminder/${invoiceId}`);
+            if (!resp.ok) return;
+            const data = await resp.json();
+            alert(`Subject: ${data.subject}\n\n${data.body}`);
+        } catch (e) {
+            console.error('Failed to generate reminder:', e);
+        }
     }
 
     // ===== BOOK A LOAD =====
@@ -1246,6 +1335,9 @@
                     actions = `<button class="btn-sm btn-sm-green" onclick="markInvoiceAs(${inv.id},'paid')">Mark Paid</button>`;
                     actions += ` <button class="btn-sm btn-sm-blue" onclick="factorInvoice(${inv.id})" style="margin-left:4px">Factor</button>`;
                 }
+                if (inv.status === 'overdue') {
+                    actions += ` <button class="btn-sm btn-sm-blue" onclick="generateInvoiceReminder(${inv.id})" style="margin-left:4px">Remind</button>`;
+                }
 
                 html += `<tr>
                     <td>${inv.id}</td>
@@ -1364,6 +1456,9 @@
                 if (transitions[d.status]) {
                     const [nextStatus, label] = transitions[d.status];
                     nextAction = `<button class="btn-sm btn-sm-blue" onclick="updateDispatchStatus(${d.id},'${nextStatus}')">${escapeHtml(label)}</button>`;
+                }
+                if (d.status !== 'delivered' && d.status !== 'cancelled') {
+                    nextAction += ` <button class="btn-sm btn-sm-blue" onclick="generateCheckCall(${d.id})" style="margin-left:4px">Check Call</button>`;
                 }
 
                 html += `<tr>

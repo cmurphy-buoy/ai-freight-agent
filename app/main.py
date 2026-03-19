@@ -21,6 +21,8 @@ from app.routes.invoices import router as invoices_router
 from app.routes.bank import router as bank_router
 from app.routes.dispatch import router as dispatch_router
 from app.routes.reports import router as reports_router
+from app.routes.bids import router as bids_router
+from app.routes.broker_comms import router as comms_router
 
 # Create the app
 app = FastAPI(
@@ -47,6 +49,8 @@ app.include_router(invoices_router)
 app.include_router(bank_router)
 app.include_router(dispatch_router)
 app.include_router(reports_router)
+app.include_router(bids_router)
+app.include_router(comms_router)
 
 
 @app.get("/")

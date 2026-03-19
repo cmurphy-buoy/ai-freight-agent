@@ -12,10 +12,12 @@ from app.models.truck import Truck, PreferredLane, EquipmentType
 from app.models.invoice import Invoice, InvoiceStatus
 from app.models.bank import BankConnection, BankTransaction, ConnectionType
 from app.models.dispatch import Dispatch, DispatchStatus
+from app.models.bid import Bid, BidStatus
 
 __all__ = [
     "Base", "CarrierProfile", "Truck", "PreferredLane", "EquipmentType",
     "Invoice", "InvoiceStatus",
     "BankConnection", "BankTransaction", "ConnectionType",
     "Dispatch", "DispatchStatus",
+    "Bid", "BidStatus",
 ]
