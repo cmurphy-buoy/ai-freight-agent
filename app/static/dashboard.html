@@ -384,6 +384,7 @@
                 </div>
                 <div class="form-group full-width">
                     <button class="btn btn-primary" onclick="saveCarrier()">Save Carrier Profile</button>
+                    <button class="btn btn-primary" onclick="seedDemo()" style="margin-left:8px;background:#059669">Quick Demo Setup</button>
                     <div id="carrier-msg" class="msg"></div>
                 </div>
             </div>
@@ -420,7 +421,7 @@
                 </div>
                 <div class="form-group">
                     <label>Max Deadhead Miles</label>
-                    <input id="max_deadhead" type="number" value="150">
+                    <input id="max_deadhead" type="number" value="300">
                 </div>
                 <div class="form-group">
                     <label>Min Rate Per Mile ($)</label>
@@ -471,9 +472,9 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>Match to Truck</label>
+                    <label>Match to Truck (optional)</label>
                     <select id="search-truck-select">
-                        <option value="">-- Browse All --</option>
+                        <option value="">Browse All (no scoring)</option>
                     </select>
                 </div>
                 <button class="btn btn-primary" onclick="searchLoads()">🔍 Search</button>
@@ -866,6 +867,25 @@
         }
     }
 
+    // ===== DEMO SEED =====
+    async function seedDemo() {
+        try {
+            const resp = await fetch(`${API}/api/demo/seed`, { method: 'POST' });
+            const data = await resp.json();
+            if (resp.ok) {
+                carrierId = data.carrier_id;
+                localStorage.setItem('carrierId', carrierId);
+                const truckNames = data.trucks.map(t => t.name).join(', ');
+                showMsg('carrier-msg', `${data.message}! Carrier ID: ${data.carrier_id}. Trucks: ${truckNames}`, 'success');
+                loadTruckDropdowns();
+            } else {
+                showMsg('carrier-msg', `Error: ${JSON.stringify(data.detail)}`, 'error');
+            }
+        } catch (e) {
+            showMsg('carrier-msg', `Network error: ${e.message}`, 'error');
+        }
+    }
+
     // ===== CITY COORDINATES LOOKUP =====
     const CITY_COORDS = {
         'atlanta_ga': [33.749, -84.388], 'nashville_tn': [36.162, -86.774],
@@ -948,7 +968,8 @@
             ['search-truck-select', 'lane-truck-select'].forEach(id => {
                 const sel = document.getElementById(id);
                 const current = sel.value;
-                sel.innerHTML = '<option value="">-- Select a truck --</option>';
+                const defaultLabel = id === 'search-truck-select' ? 'Browse All (no scoring)' : '-- Select a truck --';
+                sel.innerHTML = `<option value="">${defaultLabel}</option>`;
                 trucks.forEach(t => {
                     sel.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)} (${escapeHtml(t.equipment_type)})</option>`;
                 });
@@ -1798,6 +1819,13 @@
             console.error('Failed to load P&L:', e);
         }
     }
+
+    // ===== PAGE INIT =====
+    (async function init() {
+        if (carrierId) {
+            loadTruckDropdowns();
+        }
+    })();
 
     async function loadMonthlyTrend() {
         if (!carrierId) return;

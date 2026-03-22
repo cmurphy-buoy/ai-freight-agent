@@ -23,6 +23,7 @@ from app.routes.dispatch import router as dispatch_router
 from app.routes.reports import router as reports_router
 from app.routes.bids import router as bids_router
 from app.routes.broker_comms import router as comms_router
+from app.routes.demo import router as demo_router
 
 # Create the app
 app = FastAPI(
@@ -51,6 +52,7 @@ app.include_router(dispatch_router)
 app.include_router(reports_router)
 app.include_router(bids_router)
 app.include_router(comms_router)
+app.include_router(demo_router)
 
 
 @app.get("/")
